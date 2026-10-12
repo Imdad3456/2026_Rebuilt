@@ -12,7 +12,7 @@ public final class DriveConfigs {
         public static final SparkMaxConfig drivingConfig = new SparkMaxConfig();
         public static final SparkMaxConfig turningConfig = new SparkMaxConfig();
 
-        public static final IdleMode driveIdle = IdleMode.kCoast; //
+        public static final IdleMode driveIdle = IdleMode.kBrake; // brake: robot stops when released (Doyenne_2026)
         public static final IdleMode turnIdle = IdleMode.kBrake; //
 
         private static final int kDrivingCurrentLimit = 50;
@@ -23,7 +23,8 @@ public final class DriveConfigs {
                     .idleMode(driveIdle) //
                     // 50A is REV's recommended MAXSwerve drive limit. 60A x 4 drive motors
                     // under full field load browns out the robot (radio + CAN drop out).
-                    .smartCurrentLimit(kDrivingCurrentLimit); //
+                    .smartCurrentLimit(kDrivingCurrentLimit) //
+                    .voltageCompensation(GlobalConstants.kMedVoltageCompensation);
 
             drivingConfig.encoder
                     .positionConversionFactor(NeoSwerveModuleConstants.kDriveEncoderPositionFactor) //
@@ -40,7 +41,8 @@ public final class DriveConfigs {
             // --- Turning Motor Configuration ---
             turningConfig
                     .idleMode(turnIdle) //
-                    .smartCurrentLimit(GlobalConstants.kLowCurrentLimit); //
+                    .smartCurrentLimit(GlobalConstants.kLowCurrentLimit) //
+                    .voltageCompensation(GlobalConstants.kLowVoltageCompensation);
 
             turningConfig.absoluteEncoder
                     .inverted(true) //

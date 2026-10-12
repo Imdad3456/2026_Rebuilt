@@ -3,6 +3,8 @@ package frc.robot.util.diagnostics;
 import java.util.List;
 import java.util.Optional;
 
+import com.ctre.phoenix6.StatusSignal;
+import com.ctre.phoenix6.hardware.TalonFX;
 import com.revrobotics.REVLibError;
 import com.revrobotics.spark.SparkBase.Faults;
 import com.revrobotics.spark.SparkBase.Warnings;
@@ -18,9 +20,11 @@ import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import frc.robot.util.hardware.Sparks;
+import frc.robot.util.hardware.Talons;
 
 /**
  * Competition-safe diagnostics, written only to the on-robot .wpilog (no NetworkTables
@@ -103,6 +107,17 @@ public final class RobotDiagnostics {
   private final int[] m_prevFaultBits;
   private final int[] m_prevWarningBits;
   private int m_nextMotor = 0;
+  private final boolean[] m_sparkOk;
+
+  // TalonFX (launcher)
+  private final List<TalonFX> m_talons;
+  private final BooleanLogEntry[] m_talonConnected;
+  private final IntegerLogEntry[] m_talonFaults;
+  private final BooleanLogEntry[] m_talonBootDuringEnable;
+  private final boolean[] m_talonOk;
+  private final boolean[] m_prevTalonConnected;
+  private final int[] m_prevTalonFaultBits;
+  private String m_prevHealthProblems = null;
 
   // Edge-detection state
   private boolean m_prevDsAttached = false;
@@ -173,16 +188,36 @@ public final class RobotDiagnostics {
       m_motorLastError[i] = new StringLogEntry(log, prefix + "LastError");
     }
 
+    m_sparkOk = new boolean[n];
+    java.util.Arrays.fill(m_sparkOk, true);
+
+    m_talons = List.copyOf(Talons.all());
+    int t = m_talons.size();
+    m_talonConnected = new BooleanLogEntry[t];
+    m_talonFaults = new IntegerLogEntry[t];
+    m_talonBootDuringEnable = new BooleanLogEntry[t];
+    m_talonOk = new boolean[t];
+    java.util.Arrays.fill(m_talonOk, true);
+    m_prevTalonConnected = new boolean[t];
+    java.util.Arrays.fill(m_prevTalonConnected, true);
+    m_prevTalonFaultBits = new int[t];
+    for (int i = 0; i < t; i++) {
+      String prefix = String.format("/Diag/Motors/TalonFX%02d/", m_talons.get(i).getDeviceID());
+      m_talonConnected[i] = new BooleanLogEntry(log, prefix + "Connected");
+      m_talonFaults[i] = new IntegerLogEntry(log, prefix + "FaultBits");
+      m_talonBootDuringEnable[i] = new BooleanLogEntry(log, prefix + "RebootedWhileEnabled");
+    }
+
     m_prevCommsDisableCount = RobotController.getCommsDisableCount();
     m_prevBusOffCount = RobotController.getCANStatus().busOffCount;
 
     double uptime = RobotController.getFPGATime() / 1e6;
     event(String.format(
-        "ROBOT PROGRAM START %s | roboRIO uptime %.1f s (%s) | brownout threshold %.2f V | %d SPARKs",
+        "ROBOT PROGRAM START %s | roboRIO uptime %.1f s (%s) | brownout threshold %.2f V | %d SPARKs, %d TalonFX",
         buildDescription, uptime,
         uptime < kFreshBootSeconds ? "roboRIO BOOTED - power was lost or rio rebooted"
             : "roboRIO was already running - robot CODE restarted (crash or redeploy)",
-        RobotController.getBrownoutVoltage(), n),
+        RobotController.getBrownoutVoltage(), n, t),
         true);
 
     registerSchedulerCallbacks();
@@ -241,6 +276,8 @@ public final class RobotDiagnostics {
     }
     if (m_loopCount % kSlowEveryNLoops == 0) {
       sampleCan();
+      sampleTalons();
+      publishHealth();
     }
     sampleNextMotor();
 
@@ -376,6 +413,60 @@ public final class RobotDiagnostics {
     }
     m_prevFaultBits[i] = faults.rawBits;
     m_prevWarningBits[i] = warnings.rawBits;
+    m_sparkOk[i] = !faults.can
+        && lastError != REVLibError.kCANDisconnected && lastError != REVLibError.kTimeout;
+  }
+
+  /** TalonFX health from signals the launcher already streams (no extra CAN requests). */
+  private void sampleTalons() {
+    for (int i = 0; i < m_talons.size(); i++) {
+      TalonFX talon = m_talons.get(i);
+      boolean connected = talon.isConnected();
+      StatusSignal<Integer> faults = talon.getFaultField().refresh();
+      StatusSignal<Boolean> rebooted = talon.getStickyFault_BootDuringEnable().refresh();
+      int faultBits = (int) faults.getValueAsDouble();
+      boolean bootDuringEnable = rebooted.getValueAsDouble() != 0;
+
+      m_talonConnected[i].update(connected);
+      m_talonFaults[i].update(faultBits);
+      m_talonBootDuringEnable[i].update(bootDuringEnable);
+
+      if (connected != m_prevTalonConnected[i]) {
+        event("TalonFX CAN " + talon.getDeviceID() + (connected ? " RECONNECTED" : " DISCONNECTED"), !connected);
+        m_prevTalonConnected[i] = connected;
+      }
+      int newFaults = faultBits & ~m_prevTalonFaultBits[i];
+      if (newFaults != 0) {
+        event(String.format("TalonFX CAN %d: new fault bits 0x%X (see Phoenix Tuner for names)",
+            talon.getDeviceID(), newFaults), true);
+      }
+      m_prevTalonFaultBits[i] = faultBits;
+      m_talonOk[i] = connected && faultBits == 0;
+    }
+  }
+
+  /**
+   * Dashboard health light (idea from Doyenne_2026). Only for the drive team to see; it never
+   * disables controls, because a false alarm there would make buttons silently stop working.
+   */
+  private void publishHealth() {
+    StringBuilder problems = new StringBuilder();
+    for (int i = 0; i < m_motors.size(); i++) {
+      if (!m_sparkOk[i]) {
+        problems.append("SPARK ").append(m_motors.get(i).getDeviceId()).append(' ');
+      }
+    }
+    for (int i = 0; i < m_talons.size(); i++) {
+      if (!m_talonOk[i]) {
+        problems.append("TalonFX ").append(m_talons.get(i).getDeviceID()).append(' ');
+      }
+    }
+    String report = problems.length() == 0 ? "All motors OK" : "PROBLEM: " + problems.toString().trim();
+    if (!report.equals(m_prevHealthProblems)) {
+      SmartDashboard.putBoolean("Health/All Motors OK", problems.length() == 0);
+      SmartDashboard.putString("Health/Report", report);
+      m_prevHealthProblems = report;
+    }
   }
 
   private static String describe(Faults f, Warnings w) {

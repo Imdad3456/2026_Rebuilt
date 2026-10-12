@@ -15,6 +15,13 @@ public class GlobalConstants {
     /** Low current limit, suitable for lighter mechanisms such as intakes, small extenders, or turning motors. */
     public static final int kLowCurrentLimit = 20; 
 
+    /**
+     * Voltage compensation: the controller scales its output so the motor behaves as if the
+     * battery were at this voltage, so mechanisms act the same on a fresh or a tired battery.
+     */
+    public static final double kLowVoltageCompensation = 10.0;
+    public static final double kMedVoltageCompensation = 11.0;
+
     private static final String BENCHTOP_SERIAL = "030F25BC";
     
     // if the serial number is the benchtop or we are in simulation mode, IS_BENCHTOP is true

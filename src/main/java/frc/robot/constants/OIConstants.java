@@ -11,7 +11,7 @@ public final class OIConstants {
     public static final int kOperatorJoystickPort = 1;
 
     /** Stick movement below this is ignored. */
-    public static final double kDriveDeadband = 0.05;
+    public static final double kDriveDeadband = 0.1; // (Doyenne_2026)
 
     // ---- Driver stick ----
     /** Slider that sets drive speed. 3 is the standard joystick throttle axis. VERIFY. */
@@ -31,12 +31,12 @@ public final class OIConstants {
     public static final double kRotationSlewRate = 5.0;
 
     // ---- Operator stick ----
-    /** Slider that sets intake speed. VERIFY. */
-    public static final int kIntakeSpeedSliderAxis = 5;
-    public static final boolean kIntakeSpeedSliderInverted = false;
-    /** Slider that sets shooter RPM (axis 6 is what the launcher used before). */
-    public static final int kShooterSpeedSliderAxis = 6;
+    /** Slider that sets shooter RPM: axis 5, as in Doyenne_2026. */
+    public static final int kShooterSpeedSliderAxis = 5;
     public static final boolean kShooterSpeedSliderInverted = false;
+    /** Slider that sets intake speed: the operator's other slider (the old shooter axis). VERIFY. */
+    public static final int kIntakeSpeedSliderAxis = 6;
+    public static final boolean kIntakeSpeedSliderInverted = false;
 
     public static final int kIntakeReceiveButton = 5;
     public static final int kIntakeEjectButton = 6;

@@ -9,7 +9,8 @@ the tests pass, but the failure has never been reproduced and no competition log
 > `MotorControllerWrapper` / `RealSparkMax` / `MockSparkMax` / `HardwareFactory` layer (now
 > `util/hardware/Sparks.java`) and the single-purpose command classes (`LauncherOn`,
 > `HomeExtender`, …), which are now command methods on each subsystem. File names below
-> describe the code **as it was at competition**.
+> describe the code **as it was at competition**. Hardware facts (launcher motor type, gearing,
+> wheel size) were later corrected from the newer `Doyenne_2026` repository.
 >
 > **Field-relative "offset kept changing":** this was bug #10 below. The navX's `getAngle()` is
 > clockwise-positive, but WPILib's field-relative math expects counter-clockwise. Every degree
@@ -183,24 +184,14 @@ counters, plus each SPARK's CAN fault and "has reset" flags.
 | 11 | All tunable `periodic()` blocks | Motor configs could be rewritten while on the FMS | Yes | Fixed in this change |
 | 12 | `RealSparkMax.java` | `configure()` results ignored, so a failed config (missing or duplicate CAN ID, timeout) was silent | Yes | Fixed in this change (logged) |
 
-### Needs a measurement on the robot, not changed: swerve chassis offsets
+### Swerve chassis offsets: resolved
 
-`MAXSwerveModule.getState()` and `getPosition()` subtract `m_chassisAngularOffset`, but
-`setDesiredState()` does not add it. That is the same as the pre-refactor code the team drove
-with. Which half is right depends on how the absolute encoders were zeroed, and that can only be
-measured:
-
-1. Robot disabled and on blocks. Turn all four wheels by hand to point straight forward, with the
-   bevel gears all facing the same side.
-2. Read `/Diag/Drive/<Module>/MeasuredAngleRad` in AdvantageScope (live NetworkTables or the log).
-   - **All about 0:** encoders are zeroed to the robot frame. Set all four offsets in
-     `DriveConstants` to `0`. Driving is unchanged, and odometry/`getChassisSpeeds()` become correct.
-   - **About the REV template values** (FL ≈ 4.71, FR ≈ 0, RL ≈ 3.14, RR ≈ 1.57): the encoders use
-     REV's convention. `setDesiredState()` must add the offset
-     (`desiredState.angle.plus(Rotation2d.fromRadians(m_chassisAngularOffset))`), or the wheels
-     will point the wrong way.
-
-No offset change was made without this measurement. Guessing wrong would turn modules 90 degrees.
+At competition, `getState()`/`getPosition()` subtracted `m_chassisAngularOffset` but
+`setDesiredState()` did not add it. The later `Doyenne_2026` code (which matches the robot as it is
+now built) adds it, following REV's convention, and the team confirmed it drove correctly. The
+module now does the same. If the wheels ever point 90 degrees off, the encoders were re-zeroed:
+check `/Diag/Drive/<Module>/MeasuredAngleRad` with the wheels pointing forward (it should read
+about FL 4.71, FR 0, RL 3.14, RR 1.57).
 
 ## Fixes in this change
 
@@ -274,8 +265,9 @@ tethered or practice-field setup and room to move.
 10. Repeat steps 7 to 9 at least five times, including back-to-back runs on the same battery.
 11. After each run, download the `.wpilog` and the DS log. Check `/Diag/Events` for any of the
     signatures in the table above, even if the run looked fine.
-12. **Swerve checks** (first run only, on blocks): do the chassis-offset measurement above, and
-    confirm that `CommandedAngleRad` and `MeasuredAngleRad` match within a few degrees while steering.
+12. **Swerve checks** (first run only, on blocks): confirm all four wheels point straight when
+    driving forward, and that `CommandedAngleRad` and `MeasuredAngleRad` match within a few
+    degrees while steering.
 13. **Extender check** (on blocks): move it out and in. If `Extender/Status` reports a skew fault
     immediately, the follower's encoder direction is opposite to the leader's. Report it. Don't
     raise the skew limit.
@@ -302,8 +294,10 @@ joystick enumeration or swerve hardware. Those need the checklist above on the r
    are the single most valuable piece of evidence. The only log on this laptop is a few seconds long.
 2. **Which code ran at competition.** Retrievable from the jar on the roboRIO if it hasn't been
    redeployed.
-3. **Swerve offsets.** Needs the measurement above.
+3. **Swerve offsets.** Resolved from `Doyenne_2026`; confirm on blocks.
 4. **Electrical health** (battery age, radio power, CAN wiring and termination, main breaker,
    power connectors). Software can't detect or fix these, but the logs will now show their effects.
-5. **The second launcher motor (CAN 36)** is not configured. Its required direction is unknown.
+5. **Hardware facts now come from `Doyenne_2026`** (Sept 25): TalonFX launcher, 3" wheels with a
+   12-tooth pinion, 36:1 extender with a 2.10" pulley, inverted feeder, no rollers (the intake
+   drives the floor conveyor). Each was ported into this codebase.
 6. **The extender follower's encoder direction** in hardware-follow mode needs the on-robot check.

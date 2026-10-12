@@ -20,10 +20,9 @@ import frc.robot.util.hardware.Sparks;
  * One REV MAXSwerve module: a NEO drive motor (velocity control on its built-in encoder) and a
  * NEO steering motor (position control on the Through Bore absolute encoder).
  *
- * <p>Chassis offsets: getState()/getPosition() subtract the offset but setDesiredState() does
- * not add it, which matches the code the team drove with. Which is correct depends on how the
- * absolute encoders were zeroed. See "swerve chassis offsets" in
- * COMPETITION_FAILURE_INVESTIGATION.md before changing it.
+ * <p>Chassis offsets follow REV's convention: the absolute encoders read the offset when the
+ * wheel points forward, so getState()/getPosition() subtract it and setDesiredState() adds it.
+ * Doyenne_2026 used this and drove correctly on the current robot.
  */
 public class MAXSwerveModule {
   private final SparkMax m_drivingSpark;
@@ -67,14 +66,17 @@ public class MAXSwerveModule {
 
   /** Steer and drive toward the requested state, never turning more than 90 degrees. */
   public void setDesiredState(SwerveModuleState desiredState) {
+    // Chassis frame -> this module's encoder frame.
+    SwerveModuleState state = new SwerveModuleState(desiredState.speedMetersPerSecond,
+        desiredState.angle.plus(Rotation2d.fromRadians(m_chassisAngularOffset)));
     Rotation2d currentRotation = new Rotation2d(m_turningEncoder.getPosition());
 
-    desiredState.optimize(currentRotation);
+    state.optimize(currentRotation);
     // Don't drive hard until the wheel is pointing the right way.
-    desiredState.cosineScale(currentRotation);
+    state.cosineScale(currentRotation);
 
-    m_commandedAngle = desiredState.angle.getRadians();
-    m_commandedSpeed = desiredState.speedMetersPerSecond;
+    m_commandedAngle = state.angle.getRadians();
+    m_commandedSpeed = state.speedMetersPerSecond;
     m_drivingController.setSetpoint(m_commandedSpeed, ControlType.kVelocity);
     m_turningController.setSetpoint(m_commandedAngle, ControlType.kPosition);
   }

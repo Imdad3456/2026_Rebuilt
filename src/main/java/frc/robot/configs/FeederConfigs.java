@@ -10,9 +10,10 @@ public final class FeederConfigs {
     public static final SparkMaxConfig config = new SparkMaxConfig();
 
     static {
-        config.inverted(false);
+        config.inverted(true); // (Doyenne_2026)
         config.idleMode(IdleMode.kBrake);
         config.smartCurrentLimit(GlobalConstants.kMediumCurrentLimit);
+        config.voltageCompensation(GlobalConstants.kLowVoltageCompensation);
     }
 
     private FeederConfigs() {}

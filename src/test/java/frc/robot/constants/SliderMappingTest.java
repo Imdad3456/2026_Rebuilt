@@ -36,7 +36,7 @@ public class SliderMappingTest {
 
   @Test
   void shooterSliderSpansMinToMaxRpm() {
-    assertEquals(LauncherConstants.kLaunchMinRPM.get(), LauncherSubsystem.rpmFromSlider(0.0), 1e-9);
-    assertEquals(LauncherConstants.kLaunchMaxRPM.get(), LauncherSubsystem.rpmFromSlider(1.0), 1e-9);
+    assertEquals(LauncherConstants.kMinShotRPM.get(), LauncherSubsystem.rpmFromSlider(0.0), 1e-9);
+    assertEquals(LauncherConstants.kMaxShotRPM.get(), LauncherSubsystem.rpmFromSlider(1.0), 1e-9);
   }
 }

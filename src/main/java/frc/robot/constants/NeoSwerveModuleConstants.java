@@ -36,9 +36,9 @@ public class NeoSwerveModuleConstants {
 
     // --- THE SETTINGS YOU CHANGE ---
     /** The currently selected gearbox configuration for the swerve modules. */
-    public static final GearboxConfig kCurrentGearbox = GearboxConfig.MEDIUM; 
+    public static final GearboxConfig kCurrentGearbox = GearboxConfig.LOW; // 12T pinion (Doyenne_2026)
     /** The diameter of the swerve module wheel in inches. */
-    private static final double kWheelDiameterInches = 2.875; 
+    private static final double kWheelDiameterInches = 3.0; // (Doyenne_2026)
 
     // --- CALCULATIONS ---
     /** The diameter of the swerve module wheel in meters. */

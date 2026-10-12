@@ -1,38 +1,34 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 package frc.robot.configs;
 
-import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
-import com.revrobotics.spark.FeedbackSensor;
-import com.revrobotics.spark.config.SparkMaxConfig;
+import com.ctre.phoenix6.configs.TalonFXConfiguration;
+import com.ctre.phoenix6.signals.InvertedValue;
+import com.ctre.phoenix6.signals.NeutralModeValue;
 
-import frc.robot.constants.GlobalConstants;
 import frc.robot.constants.LauncherConstants;
 
-/** Add your docs here. */
-public class LauncherConfigs {
-    public static final SparkMaxConfig config = new SparkMaxConfig();
-    
+/** Launcher flywheel: a Kraken/Falcon (TalonFX). Velocity is in flywheel rotations per second. */
+public final class LauncherConfigs {
+    public static final TalonFXConfiguration config = new TalonFXConfiguration();
+
     static {
-        config.encoder
-            .positionConversionFactor(LauncherConstants.kPositionFactor)
-            .velocityConversionFactor(LauncherConstants.kPositionFactor);
+        config.Slot0.kP = LauncherConstants.kP.get();
+        config.Slot0.kI = LauncherConstants.kI.get();
+        config.Slot0.kD = LauncherConstants.kD.get();
+        config.Slot0.kV = LauncherConstants.kV.get();
+        config.Slot0.kS = LauncherConstants.kS.get();
 
-        config.closedLoop
-        .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-        .pid(LauncherConstants.kLauncherP.get(), LauncherConstants.kLauncherI.get(), LauncherConstants.kLauncherD.get())
-        // Never drive the flywheel backwards. Slowing down from shot speed would
-        // otherwise reverse-brake the wheel, pulling a big current spike.
-        .outputRange(0, 1);
-        
-        config.closedLoop.feedForward
-        .kV(LauncherConstants.kLauncherkV.get())
-        .kS(LauncherConstants.kLauncherStatic.get());
+        config.Feedback.SensorToMechanismRatio = LauncherConstants.kGearRatio;
 
-        config.inverted(false);        
-        config.idleMode(IdleMode.kCoast); 
-        config.smartCurrentLimit(GlobalConstants.kMediumCurrentLimit);
+        config.CurrentLimits.SupplyCurrentLimit = LauncherConstants.kSupplyCurrentLimit;
+        config.CurrentLimits.SupplyCurrentLimitEnable = true;
+
+        // Never drive the flywheel backwards: slowing from shot speed coasts down instead of
+        // reverse-braking, which would pull a big current spike.
+        config.Voltage.PeakReverseVoltage = 0.0;
+
+        config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
+        config.MotorOutput.Inverted = InvertedValue.Clockwise_Positive;
     }
+
+    private LauncherConfigs() {}
 }

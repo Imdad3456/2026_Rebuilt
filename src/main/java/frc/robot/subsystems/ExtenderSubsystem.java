@@ -6,6 +6,8 @@ import com.revrobotics.spark.SparkClosedLoopController;
 import com.revrobotics.spark.SparkMax;
 
 import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.math.filter.Debouncer;
+import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -33,7 +35,10 @@ public class ExtenderSubsystem extends SubsystemBase {
   private final RelativeEncoder m_followerEncoder = m_follower.getEncoder();
   private final SparkClosedLoopController m_controller = m_leader.getClosedLoopController();
 
-  private double m_targetInches = ExtenderConstants.kExtenderMotorIn;
+  /** Target position in meters. */
+  private double m_target = ExtenderConstants.kRetracted;
+  /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
+  private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
   private boolean m_isHomed = GlobalConstants.IS_BENCHTOP;
   /** Latched after a skew/current safety trip. The extender isn't driven until re-homed. */
   private boolean m_faulted = false;
@@ -52,12 +57,11 @@ public class ExtenderSubsystem extends SubsystemBase {
     SmartDashboard.putBoolean("Extender/Faulted", m_faulted);
 
     if (DriverStation.isDisabled()) {
-      if (ExtenderConstants.kExtenderP.hasChanged() | ExtenderConstants.kExtenderI.hasChanged()
-          | ExtenderConstants.kExtenderD.hasChanged() | ExtenderConstants.kExtenderFF.hasChanged()
-          | ExtenderConstants.kExtenderStatic.hasChanged()) {
-        Sparks.setGains(m_leader, ExtenderConstants.kExtenderP.get(), ExtenderConstants.kExtenderI.get(),
-            ExtenderConstants.kExtenderD.get(), ExtenderConstants.kExtenderFF.get(),
-            ExtenderConstants.kExtenderStatic.get());
+      if (ExtenderConstants.kP.hasChanged() | ExtenderConstants.kI.hasChanged()
+          | ExtenderConstants.kD.hasChanged() | ExtenderConstants.kV.hasChanged()
+          | ExtenderConstants.kS.hasChanged()) {
+        Sparks.setGains(m_leader, ExtenderConstants.kP.get(), ExtenderConstants.kI.get(),
+            ExtenderConstants.kD.get(), ExtenderConstants.kV.get(), ExtenderConstants.kS.get());
       }
     }
 
@@ -71,9 +75,9 @@ public class ExtenderSubsystem extends SubsystemBase {
       return;
     }
 
-    double skew = getSkewInches();
-    if (skew > ExtenderConstants.kMaxPositionDifference.get()) {
-      emergencyStop("SKEW DETECTED: " + skew);
+    double skew = Math.abs(m_leaderEncoder.getPosition() - m_followerEncoder.getPosition());
+    if (skew > ExtenderConstants.kMaxSkew) {
+      emergencyStop(String.format("SKEW DETECTED: %.2f in", Units.metersToInches(skew)));
       return;
     }
     double leaderAmps = m_leader.getOutputCurrent();
@@ -85,7 +89,7 @@ public class ExtenderSubsystem extends SubsystemBase {
 
     // Only the leader is commanded. A setpoint sent to the follower would knock it out of
     // follower mode and the two sides would fight.
-    m_controller.setSetpoint(m_targetInches, ControlType.kMAXMotionPositionControl);
+    m_controller.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
   }
 
   private void emergencyStop(String reason) {
@@ -99,12 +103,12 @@ public class ExtenderSubsystem extends SubsystemBase {
 
   /** Move fully out. */
   public Command extend() {
-    return runOnce(() -> m_targetInches = ExtenderConstants.kExtenderMotorOut).withName("ExtenderOut");
+    return runOnce(() -> m_target = ExtenderConstants.kExtended).withName("ExtenderOut");
   }
 
   /** Move fully in. */
   public Command retract() {
-    return runOnce(() -> m_targetInches = ExtenderConstants.kExtenderMotorIn).withName("ExtenderIn");
+    return runOnce(() -> m_target = ExtenderConstants.kRetracted).withName("ExtenderIn");
   }
 
   /**
@@ -115,13 +119,14 @@ public class ExtenderSubsystem extends SubsystemBase {
     return new FunctionalCommand(
         () -> {
           m_homing = true;
+          m_stallDebouncer.calculate(false);
           if (!GlobalConstants.IS_BENCHTOP) {
             Sparks.apply(m_leader, ExtenderConfigs.homingConfig, "homing config");
           }
         },
         () -> {
           if (!GlobalConstants.IS_BENCHTOP) {
-            m_leader.setVoltage(ExtenderConstants.kHomingVoltage.get());
+            m_leader.setVoltage(ExtenderConstants.kHomingVoltage);
           }
         },
         interrupted -> {
@@ -143,30 +148,31 @@ public class ExtenderSubsystem extends SubsystemBase {
   private void resetEncoders() {
     m_leaderEncoder.setPosition(0);
     m_followerEncoder.setPosition(0);
-    m_targetInches = ExtenderConstants.kExtenderMotorIn;
+    m_target = ExtenderConstants.kRetracted;
     m_isHomed = true;
     m_faulted = false;
     SmartDashboard.putString("Extender/Status", "READY");
   }
 
-  /** Both motors stalled against the hard stop. */
+  /** Both motors stalled against the hard stop for a moment. */
   private boolean isAtHome() {
-    double threshold = ExtenderConstants.kMaxHomingVoltage.get();
-    return m_leader.getOutputCurrent() > threshold && m_follower.getOutputCurrent() > threshold;
+    double threshold = ExtenderConstants.kHomingStallCurrent;
+    return m_stallDebouncer.calculate(
+        m_leader.getOutputCurrent() > threshold && m_follower.getOutputCurrent() > threshold);
   }
 
   public boolean atTarget() {
-    return Math.abs(m_targetInches - getPositionInches()) < ExtenderConstants.kAtTargetTolerance.get();
+    return Math.abs(m_target - m_leaderEncoder.getPosition()) < ExtenderConstants.kAtTargetTolerance;
   }
 
   @Logged(name = "PositionInches")
   public double getPositionInches() {
-    return m_leaderEncoder.getPosition();
+    return Units.metersToInches(m_leaderEncoder.getPosition());
   }
 
   @Logged(name = "FollowerPositionInches")
   public double getFollowerPositionInches() {
-    return m_followerEncoder.getPosition();
+    return Units.metersToInches(m_followerEncoder.getPosition());
   }
 
   @Logged(name = "SkewInches")
@@ -176,7 +182,7 @@ public class ExtenderSubsystem extends SubsystemBase {
 
   @Logged(name = "TargetInches")
   public double getTargetInches() {
-    return m_targetInches;
+    return Units.metersToInches(m_target);
   }
 
   @Logged(name = "LeaderCurrentAmps")

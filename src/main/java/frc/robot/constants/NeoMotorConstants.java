@@ -6,5 +6,5 @@ package frc.robot.constants;
  */
 public class NeoMotorConstants {
     /** The theoretical free speed of the NEO motor, in revolutions per minute (RPM). */
-    public static final double kFreeSpeedRpm = 5500.0;
+    public static final double kFreeSpeedRpm = 5676.0;
 }

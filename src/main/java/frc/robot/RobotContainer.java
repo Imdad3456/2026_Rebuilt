@@ -21,7 +21,6 @@ import frc.robot.subsystems.ExtenderSubsystem;
 import frc.robot.subsystems.FeederSubsystem;
 import frc.robot.subsystems.IntakeSubsystem;
 import frc.robot.subsystems.LauncherSubsystem;
-import frc.robot.subsystems.Rollers;
 
 /** Creates the subsystems and connects the controllers to them. */
 @Logged(strategy = Logged.Strategy.OPT_IN)
@@ -34,8 +33,6 @@ public class RobotContainer {
   private final IntakeSubsystem m_intake = new IntakeSubsystem();
   @Logged(name = "Extender")
   private final ExtenderSubsystem m_extender = new ExtenderSubsystem();
-  @Logged(name = "Rollers")
-  private final Rollers m_rollers = new Rollers();
   @Logged(name = "Feeder")
   private final FeederSubsystem m_feeder = new FeederSubsystem();
   // Climber not installed yet: private final ClimberSubsystem m_climber = new ClimberSubsystem();
@@ -78,25 +75,22 @@ public class RobotContainer {
             .withName("ToggleFieldRelative"));
 
     // ---- Operator ----
-    // Intake in (speed from the intake slider), rollers pulling it through.
-    m_operator.button(OIConstants.kIntakeReceiveButton)
-        .whileTrue(m_intake.receive(this::getIntakeSpeed).alongWith(m_rollers.forward()));
+    // Intake in, speed from the intake slider. The intake motor also runs the floor conveyor.
+    m_operator.button(OIConstants.kIntakeReceiveButton).whileTrue(m_intake.receive(this::getIntakeSpeed));
 
-    // Eject everything backwards. Reversing the feeder too makes this the unjam button.
+    // Eject backwards. Reversing the feeder too makes this the unjam button.
     m_operator.button(OIConstants.kIntakeEjectButton)
-        .whileTrue(m_intake.eject(this::getIntakeSpeed)
-            .alongWith(m_rollers.reverse(), m_feeder.reverse()));
+        .whileTrue(m_intake.eject(this::getIntakeSpeed).alongWith(m_feeder.reverse()));
 
     m_operator.button(OIConstants.kExtenderOutButton).onTrue(m_extender.extend());
     m_operator.button(OIConstants.kExtenderInButton).onTrue(m_intake.stop().alongWith(m_extender.retract()));
     m_operator.button(OIConstants.kExtenderHomeButton).onTrue(m_extender.home());
 
-    // Shoot: spin up to the shooter-slider RPM, then (and only then) move balls in. Running the
-    // rollers before the flywheel is at speed packed balls into a stopped feeder and jammed it.
+    // Shoot: spin up to the shooter-slider RPM, and only feed once at speed. Feeding into a
+    // flywheel that isn't up to speed is what jammed the loader.
     m_operator.button(OIConstants.kLauncherButton)
         .whileTrue(m_launcher.spinUp(this::getShooterRPM)
-            .alongWith(Commands.waitUntil(m_launcher::atSpeed)
-                .andThen(m_feeder.feed().alongWith(m_rollers.forward()))));
+            .alongWith(Commands.waitUntil(m_launcher::atSpeed).andThen(m_feeder.feed())));
 
     m_operator.button(OIConstants.kLauncherIdleOnButton).onTrue(m_launcher.idle());
     m_operator.button(OIConstants.kLauncherIdleOffButton).onTrue(m_launcher.off());

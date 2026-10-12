@@ -1,99 +1,57 @@
 package frc.robot.constants;
 
+import edu.wpi.first.math.util.Units;
 import frc.robot.util.RobotUtils;
 import frc.robot.util.TunableNumber;
 import frc.robot.util.TuningManager;
 
 /**
- * The ExtenderConstants class centralizes all constant values related to the robot's extender mechanism.
- * This includes motor speeds, extension limits, physical conversion factors (e.g., inches per rotation),
- * PID gains for control, homing parameters, and various operational tolerances.
+ * Extender ("the box"). Positions are in meters along the travel. Mechanics and gains come from
+ * Doyenne_2026 (the current robot).
  */
-public class ExtenderConstants {
-
-    /*
-     ****** TUNABLE VARIABLES ******
-     */
-
-    /** Default speed for the extender motor during operation. */
-    public static final TunableNumber kExtenderMotorSpeed = TuningManager.register("Extender/MotorSpeed", 0.5);
-    
-    /** kV: The voltage required to sustain a given velocity. Units: Volts/(Unit of Speed). */
-    public static final TunableNumber kExtenderFF = TuningManager.register("Extender/FF", 0.5);
-
-/** kS: The 'Oomph' required to break static friction. Units: Volts or Percent. */
-    public static final TunableNumber kExtenderStatic = TuningManager.register("Extender/Static", 0.5);
-
-    /** Proportional gain for the extender's position PID controller. */
-    public static final TunableNumber kExtenderP = TuningManager.register("Extender/P", 0.001);
-    
-    /** Integral gain for the extender's position PID controller. */
-    public static final TunableNumber kExtenderI = TuningManager.register("Extender/I", 0.0);
-    
-    /** Derivative gain for the extender's position PID controller. */
-    public static final TunableNumber kExtenderD = TuningManager.register("Extender/D", 0.0);
-    
-
-    public static final TunableNumber kExtAcceleration = TuningManager.register("Extender/Acceleration", 25.0);
-    
-    /**
-     * Allowed error (in inches) for the extender's closed-loop position control.
-     * If the extender is within this tolerance of the target, it's considered "at target".
-     */
-    public static final TunableNumber kExtenderAllowedError = TuningManager.register("Extender/AllowedError", 0.1);
+public final class ExtenderConstants {
+    // Closed-loop gains (MAXMotion position, per meter)
+    public static final TunableNumber kP = TuningManager.register("Extender/kP", 0.8);
+    public static final TunableNumber kI = TuningManager.register("Extender/kI", 0.0);
+    public static final TunableNumber kD = TuningManager.register("Extender/kD", 0.0);
+    public static final TunableNumber kV = TuningManager.register("Extender/kV", 0.8);
+    public static final TunableNumber kS = TuningManager.register("Extender/kS", 0.6);
 
     /**
-     * Maximum acceleration for the extender mechanism, likely used in motion profiling or trapezoidal control
-     * to ensure smooth and controlled movement.
-
-    /** The voltage used for homing the extender mechanism. */
-    public static final TunableNumber kHomingVoltage = TuningManager.register("Extender/HomingVoltage", -1.5);
-    
-    /** Maximum allowed voltage during the homing process. */
-    public static final TunableNumber kMaxHomingVoltage = TuningManager.register("Extender/MaxHomingVoltage", 10.0);
-    
-    /** Maximum allowed difference in position between the leader and follower motors before an error is flagged, in inches. */
-    public static final TunableNumber kMaxPositionDifference = TuningManager.register("Extender/MaxPositionDifference", 0.5);
-
-    /** Proportional gain for synchronizing the extender's leader and follower motors. */
-    public static final TunableNumber kSyncP = TuningManager.register("Extender/SyncP", 0.1);
-
-    /** Tolerance for checking if the extender has reached its target position, in inches. */
-    public static final TunableNumber kAtTargetTolerance = TuningManager.register("Extender/AtTargetTolerance", 0.03);
-
-    /*
-     ****** NON TUNABLE VARIABLES ******
+     * Motion limits. Deliberately gentler than Doyenne_2026 (1.5 m/s, 12 m/s^2) because the box
+     * slamming in and out was damaging it. Raise these after testing if it's too slow.
      */
+    public static final double kCruiseVelocity = 0.5; // m/s (~20 in/s)
+    public static final double kMaxAcceleration = 2.0; // m/s^2
 
-    /** Give up on homing after this long (seconds) instead of stalling into the hard stop. */
+    public static final double kAllowedProfileError = Units.inchesToMeters(0.5);
+    /** Within this of the target counts as "at target". */
+    public static final double kAtTargetTolerance = Units.inchesToMeters(0.1);
+
+    // Positions
+    public static final double kRetracted = 0.0;
+    public static final double kExtended = Units.inchesToMeters(12.0);
+
+    // Safety
+    /** Leader/follower disagreement that trips the skew fault (Doyenne_2026 used 2 in). */
+    public static final double kMaxSkew = Units.inchesToMeters(2.0);
+
+    // Homing: drive gently into the retracted hard stop until both motors stall.
+    public static final double kHomingVoltage = -2.4; // about 20% output
+    /** Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. */
+    public static final double kHomingStallCurrent = 15.0;
+    public static final double kHomingStallSeconds = 0.1;
     public static final double kHomingTimeoutSeconds = 3.0;
 
-    /** The target position for the extender when fully retracted, in inches. */
-    public static final double kExtenderMotorIn = 0.0;
-    
-    /** The target position for the extender when fully extended, in inches. */
-    public static final double kExtenderMotorOut = 12.0;    // -- PHYSICAL MATH --
-    
-    /** Gear ratio of the extender mechanism. A value of 1.0 indicates no gear reduction. */
-    public static final double kGearRatio = 1.0; 
-
-    // pully/sprocket circumference = Diameter * PI
-    /** Pitch diameter of the pulley or sprocket used in the extender mechanism. */
-    public static final double pitchDiameter = 1.25;
-    
-    /** Inches traveled per rotation of the extender motor, calculated from pitch diameter. */
-    public static final double kInchesPerRotation = pitchDiameter * Math.PI;
-
-    // factor: (1 / GearRatio) * InchesPerRotation
-    /**
-     * Conversion factor to translate motor rotations into inches of extension.
-     * Calculated as (1.0 / kGearRatio) * kInchesPerRotation.
-     */
-    public static final double kPositionFactor = RobotUtils.calculateLinearFactor(kGearRatio, pitchDiameter);;
+    // Hardware
+    public static final int kCurrentLimit = GlobalConstants.kMediumCurrentLimit;
+    public static final double kGearRatio = 36.0;
+    public static final double kPulleyPitchDiameterInches = 2.10;
+    /** Meters of travel per motor rotation. */
+    public static final double kPositionFactor = RobotUtils.calculateLinearFactor(kGearRatio,
+        Units.inchesToMeters(kPulleyPitchDiameterInches));
+    /** Meters per second per motor RPM. */
     public static final double kVelocityFactor = RobotUtils.toVelocityPerSecond(kPositionFactor);
-    /**
-     * Cruise velocity for the extender mechanism, used in motion profiling.
-     * Calculated based on motor free speed, extender motor speed constant, and velocity conversion factor.
-     */
-    public static final double kExtenderCruiseVelocity = NeoMotorConstants.kFreeSpeedRpm * kExtenderMotorSpeed.get() * kVelocityFactor;
+
+    private ExtenderConstants() {}
 }
