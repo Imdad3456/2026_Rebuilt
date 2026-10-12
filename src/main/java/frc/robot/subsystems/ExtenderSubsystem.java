@@ -5,6 +5,7 @@ import com.revrobotics.spark.SparkBase.ControlType;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import frc.robot.commands.HomeExtender;
 import frc.robot.configs.ExtenderConfigs;
 import frc.robot.constants.ExtenderConstants;
 import frc.robot.constants.GlobalConstants;
@@ -30,6 +31,11 @@ public class ExtenderSubsystem extends SubsystemBase {
    * position control.
    */
   private boolean m_isHomed;
+  /**
+   * Latched after a skew/current safety trip. While faulted the extender is not
+   * driven at all; re-homing clears it.
+   */
+  private boolean m_faulted = false;
 
   /**
    * Constructs a new ExtenderSubsystem.
@@ -40,9 +46,8 @@ public class ExtenderSubsystem extends SubsystemBase {
     this.m_ExtenderLeaderMotor = leader;
     this.m_ExtenderFollowMotor = follower;
 
-    // Set the follower to mirror the leader's output, inverting it as needed.
-    // This is the most reliable way to keep two motors in sync.
-    this.m_ExtenderFollowMotor.follow(this.m_ExtenderLeaderMotor, true);
+    // The follower mirrors the leader in hardware (see ExtenderConfigs.followConfig).
+    // Only the leader is ever commanded; the follower's encoder is just used for the skew check.
 
     if (GlobalConstants.IS_BENCHTOP) {
       this.m_isHomed = true;
@@ -66,50 +71,58 @@ public class ExtenderSubsystem extends SubsystemBase {
     SmartDashboard.putNumber("Extender Error", error);
     SmartDashboard.putBoolean("EXT HOMED", m_isHomed);
     SmartDashboard.putNumber("Extender Target", m_globalTargetInches);
-    SmartDashboard.putNumber("EXT LEAD VOLTAGE", m_ExtenderLeaderMotor.getOutputCurrent());
-    SmartDashboard.putNumber("EXT FOLL VOLTAGE", m_ExtenderFollowMotor.getOutputCurrent());
+    SmartDashboard.putBoolean("Extender/Faulted", m_faulted);
 
-    //System.out.println("L Units: " + m_ExtenderLeaderMotor.getPosition());
-    //System.out.println("F Units: " + m_ExtenderFollowMotor.getPosition());
-    
-    // Safety 1: The Skew Check (0.5 inches is a good 'real world' limit)
-    if (error > ExtenderConstants.kMaxPositionDifference.get()) { // kMaxPositionDifference was 10.5, which is 'frame-snapping' territory
-        emergencyStop("SKEW DETECTED: " + error);
-        return;
-    }
-
-    // Safety 2: The Current Imbalance
     double leaderCurrent = m_ExtenderLeaderMotor.getOutputCurrent();
     double followCurrent = m_ExtenderFollowMotor.getOutputCurrent();
-    if (Math.abs(leaderCurrent - followCurrent) > GlobalConstants.kHighCurrentLimit) { 
-        emergencyStop("CURRENT IMBALANCE: L:" + leaderCurrent + " F:" + followCurrent);
-        return;
-    }
+    SmartDashboard.putNumber("EXT LEAD CURRENT", leaderCurrent);
+    SmartDashboard.putNumber("EXT FOLL CURRENT", followCurrent);
 
     if (DriverStation.isDisabled()) {
         if (ExtenderConstants.kExtenderP.hasChanged() || ExtenderConstants.kExtenderI.hasChanged()
                || ExtenderConstants.kExtenderD.hasChanged() || ExtenderConstants.kExtenderFF.hasChanged()) {
             m_ExtenderLeaderMotor.setPID(ExtenderConstants.kExtenderP.get(), ExtenderConstants.kExtenderI.get(),
              ExtenderConstants.kExtenderD.get(), ExtenderConstants.kExtenderFF.get(), ExtenderConstants.kExtenderStatic.get());
-            m_ExtenderFollowMotor.setPID(ExtenderConstants.kExtenderP.get(), ExtenderConstants.kExtenderI.get(),
-             ExtenderConstants.kExtenderD.get(), ExtenderConstants.kExtenderFF.get(), ExtenderConstants.kExtenderStatic.get());
         }
     }
-/*
-    if (m_isHomed) {
-        // Only the leader needs a command now! 
-        // The follower hardware will mirror this automatically.
-        m_ExtenderLeaderMotor.setTargetValue(m_globalTargetInches, ControlType.kMAXMotionPositionControl);
-    }*/
+
+    // Homing drives the motors with raw voltage and is how a fault gets cleared,
+    // so don't run the safety checks or fight it with a setpoint.
+    if (getCurrentCommand() instanceof HomeExtender) {
+      return;
+    }
+
+    // Latched fault: keep the motors off until the extender is re-homed.
+    if (m_faulted) {
+      stop();
+      return;
+    }
+
+    // Safety 1: The Skew Check
+    if (error > ExtenderConstants.kMaxPositionDifference.get()) {
+        emergencyStop("SKEW DETECTED: " + error);
+        return;
+    }
+
+    // Safety 2: The Current Imbalance
+    if (Math.abs(leaderCurrent - followCurrent) > GlobalConstants.kHighCurrentLimit) {
+        emergencyStop("CURRENT IMBALANCE: L:" + leaderCurrent + " F:" + followCurrent);
+        return;
+    }
+
+    // Only the leader is commanded. Sending a setpoint to the follower would knock
+    // it out of follower mode and the two sides would fight each other.
     m_ExtenderLeaderMotor.setTargetValue(m_globalTargetInches, ControlType.kMAXMotionPositionControl);
-    m_ExtenderFollowMotor.setTargetValue(m_globalTargetInches, ControlType.kMAXMotionPositionControl);
 }
 
 private void emergencyStop(String reason) {
     stop();
     m_isHomed = false;
+    m_faulted = true;
     SmartDashboard.putString("Extender/Status", "CRITICAL FAILURE: " + reason);
-    System.out.println(">>> [EXTENDER] " + reason);
+    // Printed once (the fault latches). Printing every 20ms floods the console
+    // stream to the Driver Station and adds to radio traffic.
+    DriverStation.reportError(">>> [EXTENDER] " + reason + " - re-home to clear", false);
 }
 
   /**
@@ -150,6 +163,8 @@ private void emergencyStop(String reason) {
     m_ExtenderFollowMotor.setPosition(0);
     this.m_globalTargetInches = 0; // Reset target to zero
     this.m_isHomed = true; // Extender is now square and trusted
+    this.m_faulted = false;
+    SmartDashboard.putString("Extender/Status", "READY");
     SmartDashboard.putBoolean("Extender/SKEW_ERROR", false);
   }
 
@@ -158,7 +173,6 @@ private void emergencyStop(String reason) {
    */
   public void stop() {
     m_ExtenderLeaderMotor.stop();
-    m_ExtenderFollowMotor.stop();
   }
 
   /**
@@ -192,8 +206,8 @@ private void emergencyStop(String reason) {
    * @param voltage The voltage to apply to the motors.
    */
   public void setHomingVoltages(double voltage) {
+    // The follower mirrors the leader in hardware.
     m_ExtenderLeaderMotor.setOutputVoltage(voltage);
-    m_ExtenderFollowMotor.setOutputVoltage(voltage);
   }
 
   /**
@@ -243,6 +257,5 @@ private void emergencyStop(String reason) {
     // resetting other parameters and without persisting to flash.
     m_ExtenderLeaderMotor.setConfiguration(ExtenderConfigs.leaderConfig);
     m_ExtenderFollowMotor.setConfiguration(ExtenderConfigs.followConfig);
-    System.out.println("Extender Configurations Set");
   }
 }

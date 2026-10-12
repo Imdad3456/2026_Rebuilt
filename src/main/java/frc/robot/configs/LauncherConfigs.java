@@ -22,7 +22,10 @@ public class LauncherConfigs {
 
         config.closedLoop
         .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-        .pid(LauncherConstants.kLauncherP.get(), LauncherConstants.kLauncherI.get(), LauncherConstants.kLauncherD.get());
+        .pid(LauncherConstants.kLauncherP.get(), LauncherConstants.kLauncherI.get(), LauncherConstants.kLauncherD.get())
+        // Never drive the flywheel backwards. Slowing down from shot speed would
+        // otherwise reverse-brake the wheel, pulling a big current spike.
+        .outputRange(0, 1);
         
         config.closedLoop.feedForward
         .kV(LauncherConstants.kLauncherkV.get())

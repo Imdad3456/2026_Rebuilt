@@ -34,19 +34,9 @@ public class LauncherIdle extends Command {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-    double currentRPM = m_Launcher.getActualVelocity();
-    double idleRPM = LauncherConstants.kLauncherMotorSpeedIdle.get();
-
-    if (currentRPM > idleRPM + 100) {
-        // We are way above idle. Don't use PID! 
-        // Just give it a tiny 'maintenance' voltage so it doesn't 
-        // feel like it's slamming on the brakes.
-        m_Launcher.setVoltage(1.0); // Adjust this '1.0' to whatever keeps it at ~500
-    } else {
-        // We are close to or below idle. Now the PID can take over 
-        // to keep it steady at exactly 500.
-        m_Launcher.setLauncherVelocity(idleRPM);
-    }
+    // The launcher's closed loop can't drive in reverse (see LauncherConfigs), so
+    // dropping from shot speed to idle just coasts down instead of braking hard.
+    m_Launcher.setLauncherVelocity(LauncherConstants.kLauncherMotorSpeedIdle.get());
   }
 
   // Called once the command ends or is interrupted.

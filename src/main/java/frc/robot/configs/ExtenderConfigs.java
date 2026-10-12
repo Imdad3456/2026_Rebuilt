@@ -5,6 +5,7 @@ import com.revrobotics.spark.config.MAXMotionConfig.MAXMotionPositionMode;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
 import com.revrobotics.spark.config.SparkMaxConfig;
 
+import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.ExtenderConstants;
 import frc.robot.constants.GlobalConstants;
 
@@ -74,8 +75,10 @@ public class ExtenderConfigs {
         followConfig.idleMode(IdleMode.kBrake);
         followConfig.smartCurrentLimit(GlobalConstants.kMediumCurrentLimit);
 
-        // FOLLOWER CONFIGURATION IS SET IN THE SUBSYSTEM CONSTRUCTOR
         // NO PID, NO FF, NO MOTION MAGIC. JUST FOLLOW.
+        // Set here (not at runtime) so it is persisted to flash: if the follower
+        // SPARK browns out and reboots mid-match it comes back still following.
+        followConfig.follow(CanIdConstants.kExtenderMotor1, true);
 
         // Apply the leader's configuration to the homing motor config as a base.
         homingConfig.apply(leaderConfig);

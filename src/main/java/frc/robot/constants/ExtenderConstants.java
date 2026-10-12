@@ -65,6 +65,9 @@ public class ExtenderConstants {
      ****** NON TUNABLE VARIABLES ******
      */
 
+    /** Give up on homing after this long (seconds) instead of stalling into the hard stop. */
+    public static final double kHomingTimeoutSeconds = 3.0;
+
     /** The target position for the extender when fully retracted, in inches. */
     public static final double kExtenderMotorIn = 0.0;
     

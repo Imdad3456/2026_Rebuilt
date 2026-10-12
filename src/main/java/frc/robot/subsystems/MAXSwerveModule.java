@@ -47,7 +47,10 @@ public class MAXSwerveModule {
    */
   public MAXSwerveModule(int drivingCANId, int turningCANId, double chassisAngularOffset) {
     m_drivingMotor = HardwareFactory.createSparkMax(drivingCANId, DriveConfigs.MAXSwerveModule.drivingConfig);
-    m_turningMotor = HardwareFactory.createSparkMax(turningCANId, DriveConfigs.MAXSwerveModule.drivingConfig);
+    // Turning motors MUST use the turning config (absolute encoder feedback, brake mode,
+    // low current limit). Using the driving config here gave them a 60A limit and coast
+    // mode, and closed the loop on the wrong encoder.
+    m_turningMotor = HardwareFactory.createSparkMax(turningCANId, DriveConfigs.MAXSwerveModule.turningConfig, true);
 
     this.m_chassisAngularOffset = chassisAngularOffset;
     // Set the driving encoder's position to zero initially.

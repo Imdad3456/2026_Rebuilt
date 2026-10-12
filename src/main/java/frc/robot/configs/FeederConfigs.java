@@ -29,6 +29,7 @@ public class FeederConfigs {
 
         config.inverted(false);        
         config.idleMode(IdleMode.kBrake); 
-        config.smartCurrentLimit(GlobalConstants.kLowCurrentLimit);
+        // 20A stalled the feeder as soon as a ball got pinched against the flywheel.
+        config.smartCurrentLimit(GlobalConstants.kMediumCurrentLimit);
     }
 }

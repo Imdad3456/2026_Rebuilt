@@ -15,11 +15,15 @@ public final class DriveConfigs {
         public static final IdleMode driveIdle = IdleMode.kCoast; //
         public static final IdleMode turnIdle = IdleMode.kBrake; //
 
+        private static final int kDrivingCurrentLimit = 50;
+
         static {
             // --- Driving Motor Configuration ---
             drivingConfig
                     .idleMode(driveIdle) //
-                    .smartCurrentLimit(GlobalConstants.kHighCurrentLimit); //
+                    // 50A is REV's recommended MAXSwerve drive limit. 60A x 4 drive motors
+                    // under full field load browns out the robot (radio + CAN drop out).
+                    .smartCurrentLimit(kDrivingCurrentLimit); //
 
             drivingConfig.encoder
                     .positionConversionFactor(NeoSwerveModuleConstants.kDriveEncoderPositionFactor) //

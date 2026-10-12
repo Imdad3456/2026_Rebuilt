@@ -49,6 +49,9 @@ public class MockSparkMax implements MotorControllerWrapper {
 
     @Override
     public void updateHardwarePID(double p, double i, double d, double kV , double kS){
+        if (this.m_config == null) {
+            this.m_config = new SparkMaxConfig();
+        }
         this.m_config.closedLoop.feedForward
         .kV(kV)
         .kS(kS);

@@ -18,7 +18,7 @@ import frc.robot.subsystems.LauncherSubsystem;
 public class LauncherOn extends Command {
   /** The LauncherSubsystem instance that this command will control. */
   private final LauncherSubsystem m_launcher;
-  private final double m_speedSource;
+  private final DoubleSupplier m_speedSource;
   
   /**
    * Creates a new LauncherOn command.
@@ -27,7 +27,9 @@ public class LauncherOn extends Command {
    */
   public LauncherOn(LauncherSubsystem launcher, DoubleSupplier launchSpeed) {
     this.m_launcher = launcher;
-    this.m_speedSource = (launchSpeed.getAsDouble() + 1) / 2;
+    // Keep the supplier so the slider is read every loop. (Reading it here only
+    // sampled the slider once, when the robot code booted.)
+    this.m_speedSource = launchSpeed;
     // This command should require the LauncherSubsystem to prevent other commands from
     // interfering with launcher operation.
     addRequirements(this.m_launcher);
@@ -44,7 +46,9 @@ public class LauncherOn extends Command {
     SmartDashboard.putString("Current Command", this.getClass().getSimpleName());
     //double launcherSpeed = m_launcher.calculateRPMFromLimeLight();
     // Set the launcher motor to the calculated velocity.
-    this.m_launcher.setLauncherVelocity(m_launcher.calcualteRPMFromSlider(m_speedSource));
+    // Slider is -1..1; map it to 0..1.
+    double sliderPercent = (m_speedSource.getAsDouble() + 1) / 2;
+    this.m_launcher.setLauncherVelocity(m_launcher.calcualteRPMFromSlider(sliderPercent));
   }
 
   // Called once the command ends or is interrupted.

@@ -30,6 +30,8 @@ import frc.robot.configs.IntakeConfigs;
 import frc.robot.configs.LauncherConfigs;
 import frc.robot.configs.RollerConfigs;
 import frc.robot.constants.CanIdConstants;
+import frc.robot.constants.ExtenderConstants;
+import frc.robot.constants.FeederConstants;
 import frc.robot.constants.OIConstants;
 import frc.robot.constants.GlobalConstants;
 
@@ -72,7 +74,7 @@ public class RobotContainer {
   /** The robot's drive subsystem, controlling movement. */
   private final DriveSubsystem m_robotDrive = new DriveSubsystem();
   /** The robot's launcher subsystem, responsible for shooting game pieces. */
-  private final LauncherSubsystem m_Launcher = new LauncherSubsystem(HardwareFactory.createSparkMax(CanIdConstants.kLauncherMotor, LauncherConfigs.config));
+  private final LauncherSubsystem m_Launcher = new LauncherSubsystem(HardwareFactory.createSparkMax(CanIdConstants.kLauncherLeaderMotor, LauncherConfigs.config));
   /** The robot's intake subsystem, for acquiring game pieces. */
   private final IntakeSubsystem m_Intake = new IntakeSubsystem(HardwareFactory.createSparkMax(CanIdConstants.kIntakeMotor, IntakeConfigs.config));
   /** The robot's extender subsystem, for extending and retracting mechanisms. */
@@ -164,11 +166,16 @@ public class RobotContainer {
             new IntakeReceive(m_Intake),
             new RollerForward(m_Rollers)));
 
-    // intakeEject: When held, runs the intake and rollers in reverse to eject a ball.
+    // intakeEject: When held, runs the intake, rollers and feeder in reverse to eject a ball.
+    // Reversing the feeder too makes this the "unjam" button for the shooter loader.
     intakeEject.whileTrue(
         new ParallelCommandGroup(
             new IntakeEject(m_Intake),
-            new RollerReverse(m_Rollers)));
+            new RollerReverse(m_Rollers),
+            Commands.startEnd(
+                () -> m_Feeder.engageFeeder(-FeederConstants.kFeederSpeed.get()),
+                m_Feeder::stopFeeder,
+                m_Feeder)));
 
     // extenderOut: When pressed, extends the extender.
     extenderOut.onTrue(
@@ -180,21 +187,24 @@ public class RobotContainer {
             new IntakeStop(m_Intake),
             new ExtenderIn(m_Extender)));
 
-    // launch: When held, runs the launcher, rollers, and feeder to shoot a ball.
-    // The feeder will only run after the launcher is at speed.
+    // launch: When held, spins up the launcher, then runs the rollers and feeder together.
+    // The rollers used to start immediately, packing balls into the stopped feeder while
+    // the flywheel spun up, which is what jammed the loader. Now nothing moves balls
+    // until the launcher is at speed.
+    // (No ball-present gate: there's no hopper sensor yet, and a floating DIO reads true.)
     launch.whileTrue(
         new ParallelCommandGroup(
-            new RollerForward(m_Rollers),
             new LauncherOn(m_Launcher, () -> m_operatorJoystick.getRawAxis(6)),
-            //new LauncherOn(m_Launcher),
-            new WaitUntilCommand(() -> m_Launcher.atSpeed()).andThen(
-                new FeederOn(m_Feeder)
-            )
-        ).onlyIf(m_Launcher::isBallPresent)); // Only starts if there's actually a ball to shoot;
+            new WaitUntilCommand(m_Launcher::atSpeed).andThen(
+                new ParallelCommandGroup(
+                    new FeederOn(m_Feeder),
+                    new RollerForward(m_Rollers)))));
 
     // homeExtender: When pressed, homes the extender.
+    // The timeout stops it pushing into the hard stop forever if the current
+    // threshold is never reached.
     homeExtender.onTrue(
-        new HomeExtender(m_Extender));
+        new HomeExtender(m_Extender).withTimeout(ExtenderConstants.kHomingTimeoutSeconds));
 
     // launcherIdleOn: When pressed, sets the launcher to idle speed.
     launcherIdleOn.onTrue(

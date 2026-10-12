@@ -1,6 +1,5 @@
 package frc.robot.util.hardware;
 
-import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.SparkBase.ControlType;
 import com.revrobotics.spark.SparkClosedLoopController;
 import com.revrobotics.spark.SparkMax;
@@ -24,6 +23,7 @@ public class RealSparkMax implements MotorControllerWrapper {
         this.m_motor = new SparkMax(deviceId, MotorType.kBrushless);
         this.m_controller = this.m_motor.getClosedLoopController();
         
+        this.m_useAbsolute = isAbsolute;
         if (isAbsolute) {
             m_absoluteEncoder = this.m_motor.getAbsoluteEncoder();
         } else {
@@ -46,7 +46,11 @@ public class RealSparkMax implements MotorControllerWrapper {
 
     @Override
     public void setPosition(double position) {
-        this.m_motor.getEncoder().setPosition(position);
+        // Absolute encoders cannot be re-zeroed; only the relative encoder can.
+        if (m_useAbsolute) {
+            return;
+        }
+        this.m_relativeEncoder.setPosition(position);
     }
 
     @Override
@@ -84,9 +88,9 @@ public class RealSparkMax implements MotorControllerWrapper {
     public void updateHardwarePID(double p, double i, double d, double kV , double kS){
         SparkMaxConfig config = new SparkMaxConfig();
 
-        config.closedLoop
-        .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-        .pid(p, i, d);
+        // Do NOT set feedbackSensor here: that would silently switch the swerve
+        // turning motors off their absolute encoder whenever PID is retuned.
+        config.closedLoop.pid(p, i, d);
         
         config.closedLoop.feedForward
         .kV(kV)
@@ -101,6 +105,7 @@ public class RealSparkMax implements MotorControllerWrapper {
         SparkMaxConfig config = new SparkMaxConfig();
         config.closedLoop.maxMotion
         .maxAcceleration(accel);
+        this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
     }
 
     @Override
@@ -111,7 +116,13 @@ public class RealSparkMax implements MotorControllerWrapper {
     @Override
     public void follow(MotorControllerWrapper leader, boolean invert) {
         SparkMaxConfig config = new SparkMaxConfig();
-        config.follow(m_motor, invert);
+        // Follow the LEADER's SparkMax (this previously passed m_motor, so the
+        // follower was following itself and never moved with the leader).
+        SparkMax leaderMotor = leader.getSparkMax();
+        if (leaderMotor == null) {
+            return;
+        }
+        config.follow(leaderMotor, invert);
         this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
     }
 }
