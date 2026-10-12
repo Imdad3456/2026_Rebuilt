@@ -6,12 +6,23 @@ import com.revrobotics.spark.SparkMax;
 import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.spark.config.SparkMaxConfig;
 
+import edu.wpi.first.wpilibj.DataLogManager;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import com.revrobotics.REVLibError;
 import com.revrobotics.ResetMode;
 import com.revrobotics.AbsoluteEncoder;
 import com.revrobotics.PersistMode;
 import com.revrobotics.RelativeEncoder;
 
 public class RealSparkMax implements MotorControllerWrapper {
+    /** Every real SPARK MAX created, so diagnostics can watch their faults. */
+    private static final List<RealSparkMax> s_instances = new ArrayList<>();
+
+    private final int m_deviceId;
     private final SparkMax m_motor;
     private final SparkClosedLoopController m_controller;
     private RelativeEncoder m_relativeEncoder;
@@ -20,6 +31,7 @@ public class RealSparkMax implements MotorControllerWrapper {
         
 
     public RealSparkMax(int deviceId, SparkMaxConfig config, boolean isAbsolute) {
+        this.m_deviceId = deviceId;
         this.m_motor = new SparkMax(deviceId, MotorType.kBrushless);
         this.m_controller = this.m_motor.getClosedLoopController();
         
@@ -30,8 +42,29 @@ public class RealSparkMax implements MotorControllerWrapper {
             m_relativeEncoder = this.m_motor.getEncoder();
         }
 
-        // You can expand this config for PID or Current Limits later
-        this.m_motor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
+        // Persisted so a SPARK that browns out and reboots mid-match keeps its config.
+        checkResult("boot configure",
+            this.m_motor.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
+        s_instances.add(this);
+    }
+
+    /** All real SPARK MAX controllers created so far (read-only). */
+    public static List<RealSparkMax> getInstances() {
+        return Collections.unmodifiableList(s_instances);
+    }
+
+    public int getDeviceId() {
+        return m_deviceId;
+    }
+
+    /**
+     * Report a failed configure() once. A missing/duplicate CAN ID or a timeout here
+     * means the motor is running on whatever config is in its flash, not ours.
+     */
+    private void checkResult(String what, REVLibError result) {
+        if (result != REVLibError.kOk) {
+            DataLogManager.log("[MOTOR] CAN " + m_deviceId + " " + what + " FAILED: " + result);
+        }
     }
 
     @Override
@@ -71,7 +104,8 @@ public class RealSparkMax implements MotorControllerWrapper {
 
     @Override
     public void setConfiguration(SparkMaxConfig config){
-        this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+        checkResult("setConfiguration",
+            this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters));
     };
 
     @Override
@@ -96,7 +130,8 @@ public class RealSparkMax implements MotorControllerWrapper {
         .kV(kV)
         .kS(kS);
 
-        this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+        checkResult("PID update",
+            this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters));
     }
 
     @Override
@@ -105,7 +140,7 @@ public class RealSparkMax implements MotorControllerWrapper {
         SparkMaxConfig config = new SparkMaxConfig();
         config.closedLoop.maxMotion
         .maxAcceleration(accel);
-        this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+        checkResult("maxAccel", this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters));
     }
 
     @Override
@@ -123,6 +158,6 @@ public class RealSparkMax implements MotorControllerWrapper {
             return;
         }
         config.follow(leaderMotor, invert);
-        this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+        checkResult("follow", this.m_motor.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters));
     }
 }

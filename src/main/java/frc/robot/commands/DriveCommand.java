@@ -4,6 +4,8 @@
 
 package frc.robot.commands;
 
+import frc.robot.util.diagnostics.RobotDiagnostics;
+
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 
@@ -69,6 +71,9 @@ public class DriveCommand extends Command {
     double xSpeed = -MathUtil.applyDeadband(m_xSupplier.getAsDouble(), OIConstants.kDriveDeadband);
     double ySpeed = -MathUtil.applyDeadband(m_ySupplier.getAsDouble(), OIConstants.kDriveDeadband);
     double rot = -MathUtil.applyDeadband(m_rotSupplier.getAsDouble(), OIConstants.kDriveDeadband);
+
+    // Log what actually reaches the drivetrain (raw stick values are in the DS log).
+    RobotDiagnostics.recordDriveInput(xSpeed, ySpeed, rot);
 
     // Drive the robot using the processed inputs and the current field-relative state.
     m_drive.drive(xSpeed, ySpeed, rot, m_fieldRelativeSupplier.getAsBoolean());

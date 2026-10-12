@@ -14,6 +14,10 @@ import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
+import edu.wpi.first.util.datalog.BooleanLogEntry;
+import edu.wpi.first.util.datalog.DataLog;
+import edu.wpi.first.util.datalog.DoubleLogEntry;
+import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.DriveConstants;
@@ -54,10 +58,18 @@ public class DriveSubsystem extends SubsystemBase {
   /** The gyroscope sensor for measuring robot heading. */
   private final AHRS m_gyro = new AHRS(AHRS.NavXComType.kMXP_SPI);
 
+  private static final String[] kModuleNames = {"FrontLeft", "FrontRight", "RearLeft", "RearRight"};
+  private final BooleanLogEntry m_gyroConnectedLog;
+  private final DoubleLogEntry[] m_cmdAngleLog = new DoubleLogEntry[4];
+  private final DoubleLogEntry[] m_measAngleLog = new DoubleLogEntry[4];
+  private final DoubleLogEntry[] m_cmdSpeedLog = new DoubleLogEntry[4];
+  private final DoubleLogEntry[] m_measSpeedLog = new DoubleLogEntry[4];
+  private int m_logCounter = 0;
+
   /** Odometry class for tracking robot pose on the field. */
   SwerveDriveOdometry m_odometry = new SwerveDriveOdometry(
       DriveConstants.kDriveKinematics,
-      Rotation2d.fromDegrees(m_gyro.getAngle()),
+      getGyroRotation(),
       new SwerveModulePosition[] {
           m_frontLeft.getPosition(),
           m_frontRight.getPosition(),
@@ -72,13 +84,51 @@ public class DriveSubsystem extends SubsystemBase {
 public DriveSubsystem() {
   // Report usage of the MAXSwerve template to WPILib for analytics.
   HAL.report(tResourceType.kResourceType_RobotDrive, tInstances.kRobotDriveSwerve_MaxSwerve);
+
+  DataLog log = DataLogManager.getLog();
+  m_gyroConnectedLog = new BooleanLogEntry(log, "/Diag/Drive/GyroConnected");
+  for (int i = 0; i < kModuleNames.length; i++) {
+    String prefix = "/Diag/Drive/" + kModuleNames[i] + "/";
+    m_cmdAngleLog[i] = new DoubleLogEntry(log, prefix + "CommandedAngleRad");
+    m_measAngleLog[i] = new DoubleLogEntry(log, prefix + "MeasuredAngleRad");
+    m_cmdSpeedLog[i] = new DoubleLogEntry(log, prefix + "CommandedSpeedMps");
+    m_measSpeedLog[i] = new DoubleLogEntry(log, prefix + "MeasuredSpeedMps");
+  }
+}
+
+/**
+ * The robot heading, counter-clockwise positive as WPILib expects. The navX's
+ * getAngle() is clockwise positive, so using it directly mirrored the heading.
+ */
+private Rotation2d getGyroRotation() {
+  return m_gyro.getRotation2d();
+}
+
+/**
+ * Log commanded vs measured state for each module at 10 Hz. If the steering can't
+ * follow its command (e.g. wrong config/encoder), the angles visibly disagree here.
+ */
+private void logModules() {
+  if (++m_logCounter % 5 != 0) {
+    return;
+  }
+  m_gyroConnectedLog.update(m_gyro.isConnected());
+  MAXSwerveModule[] modules = {m_frontLeft, m_frontRight, m_rearLeft, m_rearRight};
+  for (int i = 0; i < modules.length; i++) {
+    m_cmdAngleLog[i].update(modules[i].getCommandedAngle());
+    m_measAngleLog[i].update(modules[i].getMeasuredAngle());
+    m_cmdSpeedLog[i].update(modules[i].getCommandedSpeed());
+    m_measSpeedLog[i].update(modules[i].getMeasuredSpeed());
+  }
 }
 
 @Override
 public void periodic() {
+    logModules();
+
     // Update the odometry in the periodic block
     m_odometry.update(
-        Rotation2d.fromDegrees(m_gyro.getAngle()),
+        getGyroRotation(),
         new SwerveModulePosition[] {
             m_frontLeft.getPosition(),
             m_frontRight.getPosition(),
@@ -131,7 +181,7 @@ public void periodic() {
    */
   public void resetOdometry(Pose2d pose) {
     m_odometry.resetPosition(
-        Rotation2d.fromDegrees(m_gyro.getAngle()),
+        getGyroRotation(),
         new SwerveModulePosition[] {
             m_frontLeft.getPosition(),
             m_frontRight.getPosition(),
@@ -161,7 +211,7 @@ public void periodic() {
         var swerveModuleStates = DriveConstants.kDriveKinematics.toSwerveModuleStates(
             fieldRelative
                 ? ChassisSpeeds.fromFieldRelativeSpeeds(xSpeedDelivered, ySpeedDelivered, rotDelivered,
-                    Rotation2d.fromDegrees(m_gyro.getAngle()))
+                    getGyroRotation())
                 : new ChassisSpeeds(xSpeedDelivered, ySpeedDelivered, rotDelivered));
     
         // Desaturate wheel speeds to ensure no wheel exceeds the maximum allowed speed.
@@ -222,7 +272,7 @@ public void periodic() {
    * @return The robot's heading in degrees, ranging from -180 to 180.
    */
   public double getHeading() {
-    return Rotation2d.fromDegrees(m_gyro.getAngle()).getDegrees();
+    return getGyroRotation().getDegrees();
   }
 
   /**
@@ -231,8 +281,9 @@ public void periodic() {
    * @return The turn rate of the robot, in degrees per second.
    */
   public double getTurnRate() {
-    // Apply a reversal to the gyro rate if kGyroReversed is true, ensuring correct sign.
-    return m_gyro.getRate() * (DriveConstants.kGyroReversed ? -1.0 : 1.0);
+    // navX getRate() is clockwise positive; negate so this matches the CCW-positive heading.
+    // Apply a further reversal if kGyroReversed is true.
+    return -m_gyro.getRate() * (DriveConstants.kGyroReversed ? -1.0 : 1.0);
   }
 
   /**

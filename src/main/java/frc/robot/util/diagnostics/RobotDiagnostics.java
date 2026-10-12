@@ -1,0 +1,415 @@
+package frc.robot.util.diagnostics;
+
+import java.util.List;
+import java.util.Optional;
+
+import com.revrobotics.REVLibError;
+import com.revrobotics.spark.SparkBase.Faults;
+import com.revrobotics.spark.SparkBase.Warnings;
+import com.revrobotics.spark.SparkMax;
+
+import edu.wpi.first.hal.can.CANStatus;
+import edu.wpi.first.util.datalog.BooleanLogEntry;
+import edu.wpi.first.util.datalog.DataLog;
+import edu.wpi.first.util.datalog.DoubleLogEntry;
+import edu.wpi.first.util.datalog.IntegerLogEntry;
+import edu.wpi.first.util.datalog.StringLogEntry;
+import edu.wpi.first.wpilibj.DataLogManager;
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotController;
+import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import frc.robot.util.hardware.RealSparkMax;
+
+/**
+ * Competition-safe diagnostics, written only to the on-robot .wpilog (no NetworkTables
+ * traffic, no extra CAN requests). Built to tell apart the causes of "auto worked,
+ * then the whole robot stopped responding in teleop":
+ *
+ * <ul>
+ *   <li>Driver Station / FMS comms loss: DS attached, comms-disable count, sys active</li>
+ *   <li>Joystick problems: per-port connected/name/type (axes + buttons come from
+ *       DriverStation.startDataLog)</li>
+ *   <li>Code crash or stall: program start + FPGA uptime, loop period, periodic time,
+ *       exceptions</li>
+ *   <li>Brownout: battery voltage, brownout flag</li>
+ *   <li>CAN: bus utilization and error counters, per-SPARK faults, warnings and resets</li>
+ * </ul>
+ *
+ * <p>Every value uses {@code update()}, which only writes when the value changes, and
+ * the slower signals are sampled every few loops. Console output only happens for rare
+ * state transitions.
+ *
+ * <p>Open the log in AdvantageScope (or WPILib's DataLogTool). Everything is under
+ * {@code /Diag/}, and {@code /Diag/Events} is a readable timeline.
+ */
+public final class RobotDiagnostics {
+  private static final int[] kJoystickPorts = {0, 1};
+  /** A loop slower than this counts as an overrun (nominal is 0.020 s). */
+  private static final double kOverrunSeconds = 0.025;
+  private static final int kPowerEveryNLoops = 5; // 10 Hz
+  private static final int kSlowEveryNLoops = 25; // 2 Hz
+  /** FPGA uptime below this at program start means the roboRIO itself rebooted. */
+  private static final double kFreshBootSeconds = 90.0;
+
+  private static RobotDiagnostics s_instance;
+
+  private final StringLogEntry m_events;
+
+  // Robot / DS state
+  private final BooleanLogEntry m_enabled;
+  private final BooleanLogEntry m_autonomous;
+  private final BooleanLogEntry m_teleop;
+  private final BooleanLogEntry m_fmsAttached;
+  private final BooleanLogEntry m_dsAttached;
+  private final BooleanLogEntry m_sysActive;
+  private final BooleanLogEntry m_eStopped;
+  private final IntegerLogEntry m_commsDisableCount;
+  private final DoubleLogEntry m_matchTime;
+
+  // Power
+  private final DoubleLogEntry m_batteryVoltage;
+  private final BooleanLogEntry m_brownedOut;
+
+  // CAN bus
+  private final DoubleLogEntry m_canUtilization;
+  private final IntegerLogEntry m_canBusOff;
+  private final IntegerLogEntry m_canTxFull;
+  private final IntegerLogEntry m_canRxErrors;
+  private final IntegerLogEntry m_canTxErrors;
+
+  // Joysticks
+  private final BooleanLogEntry[] m_joyConnected = new BooleanLogEntry[kJoystickPorts.length];
+  private final StringLogEntry[] m_joyDescription = new StringLogEntry[kJoystickPorts.length];
+
+  // Loop timing
+  private final DoubleLogEntry m_loopPeriod;
+  private final DoubleLogEntry m_periodicTime;
+  private final IntegerLogEntry m_overrunCount;
+
+  // Drive input path
+  private final BooleanLogEntry m_driveCommandScheduled;
+  private final DoubleLogEntry m_driveX;
+  private final DoubleLogEntry m_driveY;
+  private final DoubleLogEntry m_driveRot;
+
+  // Motors (one SPARK checked per loop, round robin)
+  private final List<RealSparkMax> m_motors;
+  private final IntegerLogEntry[] m_motorFaults;
+  private final IntegerLogEntry[] m_motorWarnings;
+  private final StringLogEntry[] m_motorLastError;
+  private final int[] m_prevFaultBits;
+  private final int[] m_prevWarningBits;
+  private int m_nextMotor = 0;
+
+  // Edge-detection state
+  private boolean m_prevDsAttached = false;
+  private boolean m_prevBrownedOut = false;
+  private boolean m_prevSysActive = false;
+  private int m_prevCommsDisableCount;
+  private int m_prevBusOffCount;
+  private final boolean[] m_prevJoyConnected = new boolean[kJoystickPorts.length];
+  private String m_prevMode = "";
+
+  private Command m_driveCommand;
+  private long m_loopCount = 0;
+  private long m_overruns = 0;
+  private double m_lastLoopStart = Double.NaN;
+  private double m_lastSlowLoopEvent = Double.NEGATIVE_INFINITY;
+
+  private RobotDiagnostics(String buildDescription) {
+    DataLog log = DataLogManager.getLog();
+    m_events = new StringLogEntry(log, "/Diag/Events");
+
+    m_enabled = new BooleanLogEntry(log, "/Diag/State/Enabled");
+    m_autonomous = new BooleanLogEntry(log, "/Diag/State/Autonomous");
+    m_teleop = new BooleanLogEntry(log, "/Diag/State/Teleop");
+    m_fmsAttached = new BooleanLogEntry(log, "/Diag/State/FMSAttached");
+    m_dsAttached = new BooleanLogEntry(log, "/Diag/State/DSAttached");
+    m_sysActive = new BooleanLogEntry(log, "/Diag/State/OutputsActive");
+    m_eStopped = new BooleanLogEntry(log, "/Diag/State/EStopped");
+    m_commsDisableCount = new IntegerLogEntry(log, "/Diag/State/CommsDisableCount");
+    m_matchTime = new DoubleLogEntry(log, "/Diag/State/MatchTime");
+
+    m_batteryVoltage = new DoubleLogEntry(log, "/Diag/Power/BatteryVoltage");
+    m_brownedOut = new BooleanLogEntry(log, "/Diag/Power/BrownedOut");
+
+    m_canUtilization = new DoubleLogEntry(log, "/Diag/CAN/Utilization");
+    m_canBusOff = new IntegerLogEntry(log, "/Diag/CAN/BusOffCount");
+    m_canTxFull = new IntegerLogEntry(log, "/Diag/CAN/TxFullCount");
+    m_canRxErrors = new IntegerLogEntry(log, "/Diag/CAN/ReceiveErrorCount");
+    m_canTxErrors = new IntegerLogEntry(log, "/Diag/CAN/TransmitErrorCount");
+
+    for (int i = 0; i < kJoystickPorts.length; i++) {
+      int port = kJoystickPorts[i];
+      m_joyConnected[i] = new BooleanLogEntry(log, "/Diag/Joystick" + port + "/Connected");
+      m_joyDescription[i] = new StringLogEntry(log, "/Diag/Joystick" + port + "/Description");
+    }
+
+    m_loopPeriod = new DoubleLogEntry(log, "/Diag/Loop/PeriodSeconds");
+    m_periodicTime = new DoubleLogEntry(log, "/Diag/Loop/RobotPeriodicSeconds");
+    m_overrunCount = new IntegerLogEntry(log, "/Diag/Loop/OverrunCount");
+
+    m_driveCommandScheduled = new BooleanLogEntry(log, "/Diag/Drive/DriveCommandScheduled");
+    m_driveX = new DoubleLogEntry(log, "/Diag/Drive/InputX");
+    m_driveY = new DoubleLogEntry(log, "/Diag/Drive/InputY");
+    m_driveRot = new DoubleLogEntry(log, "/Diag/Drive/InputRot");
+
+    // Snapshot: a motor created later must not outgrow the per-motor arrays below.
+    m_motors = List.copyOf(RealSparkMax.getInstances());
+    int n = m_motors.size();
+    m_motorFaults = new IntegerLogEntry[n];
+    m_motorWarnings = new IntegerLogEntry[n];
+    m_motorLastError = new StringLogEntry[n];
+    m_prevFaultBits = new int[n];
+    m_prevWarningBits = new int[n];
+    for (int i = 0; i < n; i++) {
+      String prefix = String.format("/Diag/Motors/CAN%02d/", m_motors.get(i).getDeviceId());
+      m_motorFaults[i] = new IntegerLogEntry(log, prefix + "FaultBits");
+      m_motorWarnings[i] = new IntegerLogEntry(log, prefix + "WarningBits");
+      m_motorLastError[i] = new StringLogEntry(log, prefix + "LastError");
+    }
+
+    m_prevCommsDisableCount = RobotController.getCommsDisableCount();
+    m_prevBusOffCount = RobotController.getCANStatus().busOffCount;
+
+    double uptime = RobotController.getFPGATime() / 1e6;
+    event(String.format(
+        "ROBOT PROGRAM START %s | roboRIO uptime %.1f s (%s) | brownout threshold %.2f V | %d SPARKs",
+        buildDescription, uptime,
+        uptime < kFreshBootSeconds ? "roboRIO BOOTED - power was lost or rio rebooted"
+            : "roboRIO was already running - robot CODE restarted (crash or redeploy)",
+        RobotController.getBrownoutVoltage(), n),
+        true);
+
+    registerSchedulerCallbacks();
+  }
+
+  /** Create the diagnostics. Call once, after all motors are constructed. */
+  public static RobotDiagnostics start(String buildDescription) {
+    if (s_instance == null) {
+      s_instance = new RobotDiagnostics(buildDescription);
+    }
+    return s_instance;
+  }
+
+  /** Record the joystick values DriveCommand actually sends to the drivetrain. */
+  public static void recordDriveInput(double x, double y, double rot) {
+    if (s_instance != null) {
+      s_instance.m_driveX.update(x);
+      s_instance.m_driveY.update(y);
+      s_instance.m_driveRot.update(rot);
+    }
+  }
+
+  /** Log a timestamped event. Use for rare transitions only. */
+  public static void logEvent(String message) {
+    if (s_instance != null) {
+      s_instance.event(message, false);
+    }
+  }
+
+  /** The drivetrain's default command, so we can log whether it is actually running. */
+  public void setDriveCommand(Command driveCommand) {
+    m_driveCommand = driveCommand;
+  }
+
+  /** Call at the very start of robotPeriodic(). */
+  public void loopStart(double now) {
+    if (!Double.isNaN(m_lastLoopStart)) {
+      double period = now - m_lastLoopStart;
+      m_loopPeriod.update(period);
+      if (period > kOverrunSeconds) {
+        m_overruns++;
+        m_overrunCount.update(m_overruns);
+      }
+    }
+    m_lastLoopStart = now;
+  }
+
+  /** Call at the end of robotPeriodic(), after the scheduler has run. */
+  public void periodic(double loopStartTime) {
+    m_loopCount++;
+
+    sampleRobotState();
+    if (m_loopCount % kPowerEveryNLoops == 0) {
+      samplePowerAndJoysticks();
+    }
+    if (m_loopCount % kSlowEveryNLoops == 0) {
+      sampleCan();
+    }
+    sampleNextMotor();
+
+    if (m_driveCommand != null) {
+      m_driveCommandScheduled.update(m_driveCommand.isScheduled());
+    }
+
+    double periodicTime = Timer.getFPGATimestamp() - loopStartTime;
+    m_periodicTime.update(periodicTime);
+    // Rate-limited to once a second so a stuck loop can't flood the log.
+    if (periodicTime > kOverrunSeconds && loopStartTime - m_lastSlowLoopEvent > 1.0) {
+      event(String.format("SLOW LOOP: robotPeriodic took %.1f ms", periodicTime * 1000), false);
+      m_lastSlowLoopEvent = loopStartTime;
+    }
+  }
+
+  /** Log an exception that is about to crash the robot program. */
+  public static void recordException(Throwable t) {
+    if (s_instance != null) {
+      StackTraceElement[] st = t.getStackTrace();
+      String where = st.length > 0 ? st[0].toString() : "unknown";
+      s_instance.event("EXCEPTION (robot code will restart): " + t + " at " + where, true);
+    }
+  }
+
+  private void sampleRobotState() {
+    boolean enabled = DriverStation.isEnabled();
+    boolean auto = DriverStation.isAutonomous();
+    boolean teleop = DriverStation.isTeleop();
+    boolean ds = DriverStation.isDSAttached();
+    boolean sysActive = RobotController.isSysActive();
+    int commsDisables = RobotController.getCommsDisableCount();
+
+    m_enabled.update(enabled);
+    m_autonomous.update(auto);
+    m_teleop.update(teleop);
+    m_fmsAttached.update(DriverStation.isFMSAttached());
+    m_dsAttached.update(ds);
+    m_sysActive.update(sysActive);
+    m_eStopped.update(DriverStation.isEStopped());
+    m_commsDisableCount.update(commsDisables);
+
+    String mode = (!enabled ? "DISABLED"
+        : auto ? "ENABLED AUTO" : DriverStation.isTest() ? "ENABLED TEST" : "ENABLED TELEOP")
+        + (DriverStation.isFMSAttached() ? " [FMS]" : "");
+    if (!mode.equals(m_prevMode)) {
+      event("MODE -> " + mode, false);
+      m_prevMode = mode;
+    }
+
+    if (ds != m_prevDsAttached) {
+      event(ds ? "DS CONNECTED" : "DS DISCONNECTED - lost Driver Station comms", !ds);
+      m_prevDsAttached = ds;
+    }
+    if (commsDisables != m_prevCommsDisableCount) {
+      event("COMMS DISABLE: outputs disabled by lost DS packets (count " + commsDisables + ")", true);
+      m_prevCommsDisableCount = commsDisables;
+    }
+    // Outputs dropping while we still think we're enabled = brownout/comms/e-stop.
+    if (m_prevSysActive && !sysActive && enabled) {
+      event("OUTPUTS DISABLED WHILE ENABLED (brownout, comms loss, or e-stop)", true);
+    }
+    m_prevSysActive = sysActive;
+  }
+
+  private void samplePowerAndJoysticks() {
+    m_batteryVoltage.update(RobotController.getBatteryVoltage());
+    m_matchTime.update(DriverStation.getMatchTime());
+
+    boolean brownedOut = RobotController.isBrownedOut();
+    m_brownedOut.update(brownedOut);
+    if (brownedOut != m_prevBrownedOut) {
+      event(brownedOut
+          ? String.format("BROWNOUT START (battery %.2f V)", RobotController.getBatteryVoltage())
+          : "BROWNOUT END", brownedOut);
+      m_prevBrownedOut = brownedOut;
+    }
+
+    for (int i = 0; i < kJoystickPorts.length; i++) {
+      int port = kJoystickPorts[i];
+      boolean connected = DriverStation.isJoystickConnected(port);
+      m_joyConnected[i].update(connected);
+      if (connected != m_prevJoyConnected[i] || (m_loopCount % kSlowEveryNLoops == 0)) {
+        String description = connected
+            ? String.format("%s (type %d, %d axes, %d buttons)", DriverStation.getJoystickName(port),
+                DriverStation.getJoystickType(port), DriverStation.getStickAxisCount(port),
+                DriverStation.getStickButtonCount(port))
+            : "not connected";
+        m_joyDescription[i].update(description);
+        if (connected != m_prevJoyConnected[i]) {
+          event("JOYSTICK PORT " + port + (connected ? " CONNECTED: " + description : " DISCONNECTED"),
+              !connected);
+          m_prevJoyConnected[i] = connected;
+        }
+      }
+    }
+  }
+
+  private void sampleCan() {
+    CANStatus status = RobotController.getCANStatus();
+    m_canUtilization.update(status.percentBusUtilization);
+    m_canBusOff.update(status.busOffCount);
+    m_canTxFull.update(status.txFullCount);
+    m_canRxErrors.update(status.receiveErrorCount);
+    m_canTxErrors.update(status.transmitErrorCount);
+    if (status.busOffCount != m_prevBusOffCount) {
+      event("CAN BUS-OFF (count " + status.busOffCount + ") - wiring/termination fault likely", true);
+      m_prevBusOffCount = status.busOffCount;
+    }
+  }
+
+  /** Check one SPARK per loop. These read cached status frames: no CAN requests. */
+  private void sampleNextMotor() {
+    if (m_motors.isEmpty()) {
+      return;
+    }
+    int i = m_nextMotor;
+    m_nextMotor = (m_nextMotor + 1) % m_motors.size();
+
+    RealSparkMax motor = m_motors.get(i);
+    SparkMax spark = motor.getSparkMax();
+    Faults faults = spark.getFaults();
+    Warnings warnings = spark.getWarnings();
+    REVLibError lastError = spark.getLastError();
+
+    m_motorFaults[i].update(faults.rawBits);
+    m_motorWarnings[i].update(warnings.rawBits);
+    m_motorLastError[i].update(lastError.toString());
+
+    int newFaults = faults.rawBits & ~m_prevFaultBits[i];
+    int newWarnings = warnings.rawBits & ~m_prevWarningBits[i];
+    if (newFaults != 0 || newWarnings != 0) {
+      event("SPARK CAN " + motor.getDeviceId() + ":" + describe(faults, warnings), true);
+    }
+    m_prevFaultBits[i] = faults.rawBits;
+    m_prevWarningBits[i] = warnings.rawBits;
+  }
+
+  private static String describe(Faults f, Warnings w) {
+    StringBuilder sb = new StringBuilder();
+    if (w.hasReset) sb.append(" RESET(rebooted - power dip/brownout)");
+    if (w.brownout) sb.append(" brownout");
+    if (w.overcurrent) sb.append(" overcurrent");
+    if (w.stall) sb.append(" stall");
+    if (w.sensor) sb.append(" sensor-warning");
+    if (f.can) sb.append(" CAN-FAULT");
+    if (f.sensor) sb.append(" SENSOR-FAULT");
+    if (f.temperature) sb.append(" OVER-TEMP");
+    if (f.gateDriver) sb.append(" GATE-DRIVER");
+    if (f.motorType) sb.append(" MOTOR-TYPE");
+    if (f.firmware) sb.append(" FIRMWARE");
+    if (f.escEeprom || w.escEeprom || w.extEeprom) sb.append(" EEPROM");
+    if (f.other || w.other) sb.append(" other");
+    return sb.toString();
+  }
+
+  private void registerSchedulerCallbacks() {
+    CommandScheduler scheduler = CommandScheduler.getInstance();
+    scheduler.onCommandInitialize(cmd -> event("CMD START " + cmd.getName(), false));
+    scheduler.onCommandFinish(cmd -> event("CMD END " + cmd.getName(), false));
+    scheduler.onCommandInterrupt((Command cmd, Optional<Command> by) -> event(
+        "CMD INTERRUPTED " + cmd.getName() + by.map(c -> " by " + c.getName()).orElse(""), false));
+  }
+
+  /**
+   * Append to the event log. {@code alsoWarnDs} also sends it to the Driver Station
+   * console. Only used for rare, important transitions so it can't spam.
+   */
+  private void event(String message, boolean alsoWarnDs) {
+    m_events.append(message);
+    if (alsoWarnDs) {
+      DriverStation.reportWarning("[DIAG] " + message, false);
+    }
+  }
+}

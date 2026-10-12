@@ -118,6 +118,9 @@ public class RobotContainer {
   /** Button for retracting the climber mechanism. */
   JoystickButton climbRetract = new JoystickButton(m_operatorJoystick, OIConstants.kClimberRetractButton);
 
+  /** The drivetrain's default command (kept so diagnostics can check it is running). */
+  private final Command m_driveCommand;
+
   /** A SendableChooser for selecting the autonomous command from the SmartDashboard. */
   private final SendableChooser<Command> m_autoChooser = new SendableChooser<>();
 
@@ -136,20 +139,20 @@ public class RobotContainer {
     SmartDashboard.putBoolean("Is Benchtop?", GlobalConstants.IS_BENCHTOP);
     // Configure default commands for subsystems.
     // The DriveSubsystem's default command allows the driver to control the robot's movement.
-    m_robotDrive.setDefaultCommand(
-        new DriveCommand(
-            m_robotDrive,
-            () -> m_driverJoystick.getY(), // Y-axis for forward/backward
-            () -> m_driverJoystick.getX(), // X-axis for strafing
-            () -> m_driverJoystick.getZ(), // Z-axis for rotation
-            () -> m_fieldRelative));       // Boolean supplier for field-relative control
+    m_driveCommand = new DriveCommand(
+        m_robotDrive,
+        () -> m_driverJoystick.getY(), // Y-axis for forward/backward
+        () -> m_driverJoystick.getX(), // X-axis for strafing
+        () -> m_driverJoystick.getZ(), // Z-axis for rotation
+        () -> m_fieldRelative);        // Boolean supplier for field-relative control
+    m_robotDrive.setDefaultCommand(m_driveCommand);
 
     // Configure the button bindings and their associated commands.
     configureBindings();
 
     // Add various autonomous commands to the chooser for selection via SmartDashboard.
-    m_autoChooser.setDefaultOption("Do Nothing", Commands.none()); // Default: no autonomous action
-    m_autoChooser.addOption("Simple Auto", Autos.exampleAuto(m_robotDrive)); // Example autonomous routine
+    m_autoChooser.setDefaultOption("Do Nothing", Commands.none().withName("Do Nothing")); // Default: no autonomous action
+    m_autoChooser.addOption("Simple Auto", Autos.exampleAuto(m_robotDrive).withName("Simple Auto")); // Example autonomous routine
 
     // Put the autonomous command chooser on the SmartDashboard for driver selection.
     SmartDashboard.putData("Auto choices", m_autoChooser);
@@ -244,6 +247,11 @@ public class RobotContainer {
    *
    * @return The {@link Command} to run in autonomous mode.
    */
+  /** The drivetrain's default (teleop) drive command. */
+  public Command getDriveCommand() {
+    return m_driveCommand;
+  }
+
   public Command getAutonomousCommand() {
     // 1. Get whatever auto the driver picked from the dashboard
     Command selectedAuto = m_autoChooser.getSelected();

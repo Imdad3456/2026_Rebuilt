@@ -32,6 +32,10 @@ public class MAXSwerveModule {
   /** Angular offset of this module relative to the chassis. */
   private double m_chassisAngularOffset = 0;
 
+  /** Last angle (radians, encoder frame) and speed (m/s) sent to the controllers. */
+  private double m_commandedAngle = 0;
+  private double m_commandedSpeed = 0;
+
   /**
    * Constructs a MAXSwerveModule and configures its driving and turning motors,
    * encoders, and PID controllers.
@@ -105,9 +109,32 @@ public class MAXSwerveModule {
     // This prevents the robot from "driving" before the wheels are aligned.
     desiredState.cosineScale(currentRotation);
 
+    m_commandedAngle = desiredState.angle.getRadians();
+    m_commandedSpeed = desiredState.speedMetersPerSecond;
+
     // 4. Command the SPARK MAX controllers
     m_drivingMotor.setTargetValue(desiredState.speedMetersPerSecond, ControlType.kVelocity);
     m_turningMotor.setTargetValue(desiredState.angle.getRadians(), ControlType.kPosition);
+  }
+
+  /** Last commanded steering angle in radians, in the absolute encoder's frame. */
+  public double getCommandedAngle() {
+    return m_commandedAngle;
+  }
+
+  /** Measured steering angle in radians, in the absolute encoder's frame. */
+  public double getMeasuredAngle() {
+    return m_turningMotor.getPosition();
+  }
+
+  /** Last commanded wheel speed in m/s. */
+  public double getCommandedSpeed() {
+    return m_commandedSpeed;
+  }
+
+  /** Measured wheel speed in m/s. */
+  public double getMeasuredSpeed() {
+    return m_drivingMotor.getVelocity();
   }
 
   /** Resets the drive motor's position encoder to zero. */
