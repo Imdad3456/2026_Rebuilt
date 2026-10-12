@@ -13,8 +13,10 @@ import frc.robot.constants.GlobalConstants;
 public final class ExtenderConfigs {
     public static final SparkMaxConfig leaderConfig = new SparkMaxConfig();
     public static final SparkMaxConfig followConfig = new SparkMaxConfig();
-    /** Leader config with soft limits off, so homing can reach the hard stop. */
-    public static final SparkMaxConfig homingConfig = new SparkMaxConfig();
+    /** Only turns soft limits off, so homing can reach the hard stop (nothing else is touched). */
+    public static final SparkMaxConfig softLimitsOff = new SparkMaxConfig();
+    /** Only turns soft limits back on after homing (keeps any gains tuned at runtime). */
+    public static final SparkMaxConfig softLimitsOn = new SparkMaxConfig();
 
     static {
         leaderConfig.encoder
@@ -54,10 +56,12 @@ public final class ExtenderConfigs {
             .smartCurrentLimit(ExtenderConstants.kCurrentLimit)
             .follow(CanIdConstants.kExtenderMotor1, true);
 
-        homingConfig.apply(leaderConfig);
-        homingConfig.softLimit
+        softLimitsOff.softLimit
             .forwardSoftLimitEnabled(false)
             .reverseSoftLimitEnabled(false);
+        softLimitsOn.softLimit
+            .forwardSoftLimitEnabled(true)
+            .reverseSoftLimitEnabled(true);
     }
 
     private ExtenderConfigs() {}

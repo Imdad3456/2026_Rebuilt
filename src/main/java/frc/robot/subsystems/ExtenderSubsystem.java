@@ -39,7 +39,8 @@ public class ExtenderSubsystem extends SubsystemBase {
   private double m_target = ExtenderConstants.kRetracted;
   /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
   private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
-  private boolean m_isHomed = GlobalConstants.IS_BENCHTOP;
+  /** The power-on position counts as home (the robot must start with the box retracted). */
+  private boolean m_isHomed = true;
   /** Latched after a skew/current safety trip. The extender isn't driven until re-homed. */
   private boolean m_faulted = false;
   /** True while the homing command drives the motors with raw voltage. */
@@ -121,7 +122,7 @@ public class ExtenderSubsystem extends SubsystemBase {
           m_homing = true;
           m_stallDebouncer.calculate(false);
           if (!GlobalConstants.IS_BENCHTOP) {
-            Sparks.apply(m_leader, ExtenderConfigs.homingConfig, "homing config");
+            Sparks.apply(m_leader, ExtenderConfigs.softLimitsOff, "soft limits off for homing");
           }
         },
         () -> {
@@ -135,7 +136,7 @@ public class ExtenderSubsystem extends SubsystemBase {
             resetEncoders();
           }
           if (!GlobalConstants.IS_BENCHTOP) {
-            Sparks.apply(m_leader, ExtenderConfigs.leaderConfig, "restore soft limits");
+            Sparks.apply(m_leader, ExtenderConfigs.softLimitsOn, "soft limits back on");
           }
           m_homing = false;
         },

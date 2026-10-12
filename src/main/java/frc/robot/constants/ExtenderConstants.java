@@ -10,19 +10,38 @@ import frc.robot.util.TuningManager;
  * Doyenne_2026 (the current robot).
  */
 public final class ExtenderConstants {
+    // Hardware (declared first: the gains below are computed from it, and Java initializes
+    // static fields top to bottom)
+    public static final int kCurrentLimit = GlobalConstants.kMediumCurrentLimit;
+    public static final double kGearRatio = 36.0;
+    public static final double kPulleyPitchDiameterInches = 2.10;
+    /** Meters of travel per motor rotation. */
+    public static final double kPositionFactor = RobotUtils.calculateLinearFactor(kGearRatio,
+        Units.inchesToMeters(kPulleyPitchDiameterInches));
+    /** Meters per second per motor RPM. */
+    public static final double kVelocityFactor = RobotUtils.toVelocityPerSecond(kPositionFactor);
+
+
     // Closed-loop gains (MAXMotion position, per meter)
     public static final TunableNumber kP = TuningManager.register("Extender/kP", 0.8);
     public static final TunableNumber kI = TuningManager.register("Extender/kI", 0.0);
     public static final TunableNumber kD = TuningManager.register("Extender/kD", 0.0);
-    public static final TunableNumber kV = TuningManager.register("Extender/kV", 0.8);
+    /**
+     * Volts per (m/s): 12 V divided by the box's top speed (from the gearing above).
+     * Doyenne_2026 used 0.8, about 34x too low, so the controller couldn't follow the profile.
+     */
+    public static final TunableNumber kV = TuningManager.register("Extender/kV",
+        12.0 / (NeoMotorConstants.kFreeSpeedRpm * kVelocityFactor));
     public static final TunableNumber kS = TuningManager.register("Extender/kS", 0.6);
 
     /**
-     * Motion limits. Deliberately gentler than Doyenne_2026 (1.5 m/s, 12 m/s^2) because the box
-     * slamming in and out was damaging it. Raise these after testing if it's too slow.
+     * Motion limits. The box's physical top speed is only about 0.44 m/s (17 in/s) at 12 V.
+     * Doyenne_2026 asked for 1.5 m/s: the profile ran far ahead of the box, which then hit the end
+     * at full power with no slow-down, which is likely why it was slamming. Keep the cruise speed
+     * well under the top speed so the profile can actually be followed and decelerated.
      */
-    public static final double kCruiseVelocity = 0.5; // m/s (~20 in/s)
-    public static final double kMaxAcceleration = 2.0; // m/s^2
+    public static final double kCruiseVelocity = 0.25; // m/s (~10 in/s, full travel in ~1.3 s)
+    public static final double kMaxAcceleration = 1.0; // m/s^2
 
     public static final double kAllowedProfileError = Units.inchesToMeters(0.5);
     /** Within this of the target counts as "at target". */
@@ -42,16 +61,6 @@ public final class ExtenderConstants {
     public static final double kHomingStallCurrent = 15.0;
     public static final double kHomingStallSeconds = 0.1;
     public static final double kHomingTimeoutSeconds = 3.0;
-
-    // Hardware
-    public static final int kCurrentLimit = GlobalConstants.kMediumCurrentLimit;
-    public static final double kGearRatio = 36.0;
-    public static final double kPulleyPitchDiameterInches = 2.10;
-    /** Meters of travel per motor rotation. */
-    public static final double kPositionFactor = RobotUtils.calculateLinearFactor(kGearRatio,
-        Units.inchesToMeters(kPulleyPitchDiameterInches));
-    /** Meters per second per motor RPM. */
-    public static final double kVelocityFactor = RobotUtils.toVelocityPerSecond(kPositionFactor);
 
     private ExtenderConstants() {}
 }
