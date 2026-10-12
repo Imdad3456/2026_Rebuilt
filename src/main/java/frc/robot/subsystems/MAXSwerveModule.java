@@ -4,117 +4,91 @@
 
 package frc.robot.subsystems;
 
+import com.revrobotics.AbsoluteEncoder;
+import com.revrobotics.RelativeEncoder;
+import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.spark.SparkClosedLoopController;
+import com.revrobotics.spark.SparkMax;
+
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
-import com.revrobotics.spark.SparkClosedLoopController;
-
-import com.revrobotics.spark.SparkBase.ControlType;
-
 import frc.robot.configs.DriveConfigs;
-import frc.robot.util.hardware.HardwareFactory;
-import frc.robot.util.hardware.MotorControllerWrapper;
+import frc.robot.util.hardware.Sparks;
 
 /**
- * The MAXSwerveModule class represents a single swerve drive module,
- * encapsulating its driving and turning motors, their associated encoders,
- * and PID controllers for precise control.
- * This configuration is specific to the REV MAXSwerve Module built with NEOs,
- * SPARKS MAX motor controllers, and a Through Bore Encoder for absolute
- * positioning.
+ * One REV MAXSwerve module: a NEO drive motor (velocity control on its built-in encoder) and a
+ * NEO steering motor (position control on the Through Bore absolute encoder).
+ *
+ * <p>Chassis offsets: getState()/getPosition() subtract the offset but setDesiredState() does
+ * not add it, which matches the code the team drove with. Which is correct depends on how the
+ * absolute encoders were zeroed. See "swerve chassis offsets" in
+ * COMPETITION_FAILURE_INVESTIGATION.md before changing it.
  */
 public class MAXSwerveModule {
-  /** Motor controller for the drive wheel. */
-  private final MotorControllerWrapper m_drivingMotor;
-  /** Motor controller for the turning (steer) motor. */
-  private final MotorControllerWrapper m_turningMotor;
+  private final SparkMax m_drivingSpark;
+  private final SparkMax m_turningSpark;
+  private final RelativeEncoder m_drivingEncoder;
+  private final AbsoluteEncoder m_turningEncoder;
+  private final SparkClosedLoopController m_drivingController;
+  private final SparkClosedLoopController m_turningController;
 
-  /** Angular offset of this module relative to the chassis. */
-  private double m_chassisAngularOffset = 0;
+  private final double m_chassisAngularOffset;
 
   /** Last angle (radians, encoder frame) and speed (m/s) sent to the controllers. */
   private double m_commandedAngle = 0;
   private double m_commandedSpeed = 0;
 
-  /**
-   * Constructs a MAXSwerveModule and configures its driving and turning motors,
-   * encoders, and PID controllers.
-   * This configuration is tailored for the REV MAXSwerve Module using NEO motors,
-   * SPARK MAX motor controllers, and a Through Bore Encoder.
-   *
-   * @param drivingCANId         The CAN ID of the SparkMax controller for the
-   *                             driving motor.
-   * @param turningCANId         The CAN ID of the SparkMax controller for the
-   *                             turning motor.
-   * @param chassisAngularOffset The angular offset of this module relative to the
-   *                             chassis, in radians.
-   */
   public MAXSwerveModule(int drivingCANId, int turningCANId, double chassisAngularOffset) {
-    m_drivingMotor = HardwareFactory.createSparkMax(drivingCANId, DriveConfigs.MAXSwerveModule.drivingConfig);
-    // Turning motors MUST use the turning config (absolute encoder feedback, brake mode,
-    // low current limit). Using the driving config here gave them a 60A limit and coast
-    // mode, and closed the loop on the wrong encoder.
-    m_turningMotor = HardwareFactory.createSparkMax(turningCANId, DriveConfigs.MAXSwerveModule.turningConfig, true);
+    m_drivingSpark = Sparks.create(drivingCANId, DriveConfigs.MAXSwerveModule.drivingConfig);
+    // Steering MUST use the turning config: absolute encoder feedback, brake mode, low current.
+    m_turningSpark = Sparks.create(turningCANId, DriveConfigs.MAXSwerveModule.turningConfig);
 
-    this.m_chassisAngularOffset = chassisAngularOffset;
-    // Set the driving encoder's position to zero initially.
-    m_drivingMotor.setPosition(0);
+    m_drivingEncoder = m_drivingSpark.getEncoder();
+    m_turningEncoder = m_turningSpark.getAbsoluteEncoder();
+    m_drivingController = m_drivingSpark.getClosedLoopController();
+    m_turningController = m_turningSpark.getClosedLoopController();
+
+    m_chassisAngularOffset = chassisAngularOffset;
+    m_drivingEncoder.setPosition(0);
   }
 
-  /**
-   * Returns the current state of the swerve module.
-   *
-   * @return A {@link SwerveModuleState} object representing the module's current
-   *         velocity and angle.
-   */
+  /** Current velocity and angle, relative to the chassis. */
   public SwerveModuleState getState() {
-    // Apply chassis angular offset to the turning encoder position
-    // to get the position relative to the chassis's coordinate system.
-    return new SwerveModuleState(m_drivingMotor.getVelocity(),
-        new Rotation2d(m_turningMotor.getPosition() - m_chassisAngularOffset));
+    return new SwerveModuleState(m_drivingEncoder.getVelocity(),
+        new Rotation2d(m_turningEncoder.getPosition() - m_chassisAngularOffset));
   }
 
-  /**
-   * Returns the current position of the swerve module.
-   *
-   * @return A {@link SwerveModulePosition} object representing the module's total
-   *         distance driven and angle.
-   */
+  /** Distance driven and angle, relative to the chassis. */
   public SwerveModulePosition getPosition() {
-    // Apply chassis angular offset to the turning encoder position
-    // to get the position relative to the chassis's coordinate system.
-    return new SwerveModulePosition(
-        m_drivingMotor.getPosition(),
-        new Rotation2d(m_turningMotor.getPosition() - m_chassisAngularOffset));
+    return new SwerveModulePosition(m_drivingEncoder.getPosition(),
+        new Rotation2d(m_turningEncoder.getPosition() - m_chassisAngularOffset));
   }
 
-  /**
-   * Sets the desired state for the swerve module.
-   * This method optimizes the angle to prevent unnecessary spinning
-   * and then commands the driving and turning motors to achieve the desired speed
-   * and angle.
-   *
-   * @param desiredState The {@link SwerveModuleState} containing the desired
-   *                     speed (meters per second)
-   *                     and angle (Rotation2d) for the module.
-   */
+  /** Steer and drive toward the requested state, never turning more than 90 degrees. */
   public void setDesiredState(SwerveModuleState desiredState) {
-    // 1. Get the current rotation from the turning encoder
-    Rotation2d currentRotation = new Rotation2d(m_turningMotor.getPosition());
+    Rotation2d currentRotation = new Rotation2d(m_turningEncoder.getPosition());
 
-    // 2. Optimize the state to avoid spinning more than 90 degrees
     desiredState.optimize(currentRotation);
-
-    // 3. Scale speed by cosine of angle error for smoother driving
-    // This prevents the robot from "driving" before the wheels are aligned.
+    // Don't drive hard until the wheel is pointing the right way.
     desiredState.cosineScale(currentRotation);
 
     m_commandedAngle = desiredState.angle.getRadians();
     m_commandedSpeed = desiredState.speedMetersPerSecond;
+    m_drivingController.setSetpoint(m_commandedSpeed, ControlType.kVelocity);
+    m_turningController.setSetpoint(m_commandedAngle, ControlType.kPosition);
+  }
 
-    // 4. Command the SPARK MAX controllers
-    m_drivingMotor.setTargetValue(desiredState.speedMetersPerSecond, ControlType.kVelocity);
-    m_turningMotor.setTargetValue(desiredState.angle.getRadians(), ControlType.kPosition);
+  public void resetEncoders() {
+    m_drivingEncoder.setPosition(0);
+  }
+
+  public void setDriveGains(double p, double i, double d, double kV, double kS) {
+    Sparks.setGains(m_drivingSpark, p, i, d, kV, kS);
+  }
+
+  public void setTurnGains(double p, double i, double d, double kV, double kS) {
+    Sparks.setGains(m_turningSpark, p, i, d, kV, kS);
   }
 
   /** Last commanded steering angle in radians, in the absolute encoder's frame. */
@@ -124,51 +98,14 @@ public class MAXSwerveModule {
 
   /** Measured steering angle in radians, in the absolute encoder's frame. */
   public double getMeasuredAngle() {
-    return m_turningMotor.getPosition();
+    return m_turningEncoder.getPosition();
   }
 
-  /** Last commanded wheel speed in m/s. */
   public double getCommandedSpeed() {
     return m_commandedSpeed;
   }
 
-  /** Measured wheel speed in m/s. */
   public double getMeasuredSpeed() {
-    return m_drivingMotor.getVelocity();
+    return m_drivingEncoder.getVelocity();
   }
-
-  /** Resets the drive motor's position encoder to zero. */
-  public void resetEncoders() {
-    m_drivingMotor.setPosition(0);
-  }
-
-  public SparkClosedLoopController getDrivingPIDController() {
-    return m_drivingMotor.getPIDController();
-  }
-
-  public SparkClosedLoopController getTurningPIDController() {
-    return m_turningMotor.getPIDController();
-  }
-
-  public void setDrivePID(double p, double i, double d)
-  {
-    this.m_drivingMotor.setPID(p, i, d, 0.0, 0.0);
-  }
-
-  public void setDrivePID(double p, double i, double d, double kV)
-  {
-    this.m_drivingMotor.setPID(p, i, d, kV, 0.0);
-  }
-
-  public void setDrivePID(double p, double i, double d, double kV, double kS)
-  {
-    this.m_drivingMotor.setPID(p, i, d, kV, kS);
-  }
-
-  public void setTurnPID(double p, double i, double d, double kV, double kS)
-  {
-    this.m_turningMotor.setPID(p, i, d, kV, kS);
-  }
-
-
 }

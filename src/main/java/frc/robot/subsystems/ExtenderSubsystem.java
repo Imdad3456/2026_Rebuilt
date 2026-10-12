@@ -1,261 +1,191 @@
 package frc.robot.subsystems;
 
+import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.SparkBase.ControlType;
+import com.revrobotics.spark.SparkClosedLoopController;
+import com.revrobotics.spark.SparkMax;
 
+import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.FunctionalCommand;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
-import frc.robot.commands.HomeExtender;
 import frc.robot.configs.ExtenderConfigs;
+import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.ExtenderConstants;
 import frc.robot.constants.GlobalConstants;
-import frc.robot.util.hardware.MotorControllerWrapper;
+import frc.robot.util.hardware.Sparks;
 
 /**
- * The ExtenderSubsystem controls a two-motor extender mechanism on the robot.
- * It manages motor control, position tracking, synchronization between motors,
- * and implements safety features like skew error detection and homing.
+ * The two-motor extender ("the box"). The follower mirrors the leader in hardware (see
+ * ExtenderConfigs.followConfig), so only the leader is ever commanded. The follower's encoder
+ * is read only for the skew safety check.
+ *
+ * <p>Assumes the robot powers on with the box fully retracted (the boot position is zero).
+ * Re-home with {@link #home()} to re-zero or to clear a safety fault.
  */
+@Logged(strategy = Logged.Strategy.OPT_IN)
 public class ExtenderSubsystem extends SubsystemBase {
-  /** The leader motor for the extender mechanism. */
-  private final MotorControllerWrapper m_ExtenderLeaderMotor;
-  /**
-   * The follower motor for the extender mechanism, synchronized with the leader.
-   */
-  private final MotorControllerWrapper m_ExtenderFollowMotor;
+  private final SparkMax m_leader = Sparks.create(CanIdConstants.kExtenderMotor1, ExtenderConfigs.leaderConfig);
+  private final SparkMax m_follower = Sparks.create(CanIdConstants.kExtenderMotor2, ExtenderConfigs.followConfig);
+  private final RelativeEncoder m_leaderEncoder = m_leader.getEncoder();
+  private final RelativeEncoder m_followerEncoder = m_follower.getEncoder();
+  private final SparkClosedLoopController m_controller = m_leader.getClosedLoopController();
 
-  /** The global target position in inches for the extender mechanism. */
-  private double m_globalTargetInches = 0.0;
-  /**
-   * Flag indicating if the extender mechanism has been homed and is trusted for
-   * position control.
-   */
-  private boolean m_isHomed;
-  /**
-   * Latched after a skew/current safety trip. While faulted the extender is not
-   * driven at all; re-homing clears it.
-   */
+  private double m_targetInches = ExtenderConstants.kExtenderMotorIn;
+  private boolean m_isHomed = GlobalConstants.IS_BENCHTOP;
+  /** Latched after a skew/current safety trip. The extender isn't driven until re-homed. */
   private boolean m_faulted = false;
+  /** True while the homing command drives the motors with raw voltage. */
+  private boolean m_homing = false;
 
-  /**
-   * Constructs a new ExtenderSubsystem.
-   * Initializes the leader and follower motors, their closed-loop controllers,
-   * and configures them with predefined settings.
-   */
-  public ExtenderSubsystem(MotorControllerWrapper leader, MotorControllerWrapper follower) {
-    this.m_ExtenderLeaderMotor = leader;
-    this.m_ExtenderFollowMotor = follower;
-
-    // The follower mirrors the leader in hardware (see ExtenderConfigs.followConfig).
-    // Only the leader is ever commanded; the follower's encoder is just used for the skew check.
-
-    if (GlobalConstants.IS_BENCHTOP) {
-      this.m_isHomed = true;
-      this.m_ExtenderLeaderMotor.setPosition(0.0);
-      this.m_ExtenderFollowMotor.setPosition(0.0);
-      System.out.println(">>> [EXTENDER] Benchtop detected: Auto-Homing enabled.");
-    } else {
-      this.m_isHomed = false;
-    }
-    enableSoftLimits();
+  public ExtenderSubsystem() {
+    m_leaderEncoder.setPosition(0);
+    m_followerEncoder.setPosition(0);
+    SmartDashboard.putString("Extender/Status", "READY");
   }
 
   @Override
   public void periodic() {
-    double leaderPos = getPositionInInches(m_ExtenderLeaderMotor);
-    double followPos = getPositionInInches(m_ExtenderFollowMotor);
-    double error = Math.abs(leaderPos - followPos); 
-
-    SmartDashboard.putNumber("Extender Ldr Pos", leaderPos);
-    SmartDashboard.putNumber("Extender Flw Pos", followPos);
-    SmartDashboard.putNumber("Extender Error", error);
-    SmartDashboard.putBoolean("EXT HOMED", m_isHomed);
-    SmartDashboard.putNumber("Extender Target", m_globalTargetInches);
+    SmartDashboard.putBoolean("Extender/Homed", m_isHomed);
     SmartDashboard.putBoolean("Extender/Faulted", m_faulted);
 
-    double leaderCurrent = m_ExtenderLeaderMotor.getOutputCurrent();
-    double followCurrent = m_ExtenderFollowMotor.getOutputCurrent();
-    SmartDashboard.putNumber("EXT LEAD CURRENT", leaderCurrent);
-    SmartDashboard.putNumber("EXT FOLL CURRENT", followCurrent);
-
     if (DriverStation.isDisabled()) {
-        if (ExtenderConstants.kExtenderP.hasChanged() || ExtenderConstants.kExtenderI.hasChanged()
-               || ExtenderConstants.kExtenderD.hasChanged() || ExtenderConstants.kExtenderFF.hasChanged()) {
-            m_ExtenderLeaderMotor.setPID(ExtenderConstants.kExtenderP.get(), ExtenderConstants.kExtenderI.get(),
-             ExtenderConstants.kExtenderD.get(), ExtenderConstants.kExtenderFF.get(), ExtenderConstants.kExtenderStatic.get());
-        }
+      if (ExtenderConstants.kExtenderP.hasChanged() | ExtenderConstants.kExtenderI.hasChanged()
+          | ExtenderConstants.kExtenderD.hasChanged() | ExtenderConstants.kExtenderFF.hasChanged()
+          | ExtenderConstants.kExtenderStatic.hasChanged()) {
+        Sparks.setGains(m_leader, ExtenderConstants.kExtenderP.get(), ExtenderConstants.kExtenderI.get(),
+            ExtenderConstants.kExtenderD.get(), ExtenderConstants.kExtenderFF.get(),
+            ExtenderConstants.kExtenderStatic.get());
+      }
     }
 
-    // Homing drives the motors with raw voltage and is how a fault gets cleared,
-    // so don't run the safety checks or fight it with a setpoint.
-    if (getCurrentCommand() instanceof HomeExtender) {
+    // Homing drives the motors itself and is how a fault gets cleared.
+    if (m_homing) {
       return;
     }
 
-    // Latched fault: keep the motors off until the extender is re-homed.
     if (m_faulted) {
-      stop();
+      m_leader.stopMotor();
       return;
     }
 
-    // Safety 1: The Skew Check
-    if (error > ExtenderConstants.kMaxPositionDifference.get()) {
-        emergencyStop("SKEW DETECTED: " + error);
-        return;
+    double skew = getSkewInches();
+    if (skew > ExtenderConstants.kMaxPositionDifference.get()) {
+      emergencyStop("SKEW DETECTED: " + skew);
+      return;
+    }
+    double leaderAmps = m_leader.getOutputCurrent();
+    double followerAmps = m_follower.getOutputCurrent();
+    if (Math.abs(leaderAmps - followerAmps) > GlobalConstants.kHighCurrentLimit) {
+      emergencyStop("CURRENT IMBALANCE: L:" + leaderAmps + " F:" + followerAmps);
+      return;
     }
 
-    // Safety 2: The Current Imbalance
-    if (Math.abs(leaderCurrent - followCurrent) > GlobalConstants.kHighCurrentLimit) {
-        emergencyStop("CURRENT IMBALANCE: L:" + leaderCurrent + " F:" + followCurrent);
-        return;
-    }
+    // Only the leader is commanded. A setpoint sent to the follower would knock it out of
+    // follower mode and the two sides would fight.
+    m_controller.setSetpoint(m_targetInches, ControlType.kMAXMotionPositionControl);
+  }
 
-    // Only the leader is commanded. Sending a setpoint to the follower would knock
-    // it out of follower mode and the two sides would fight each other.
-    m_ExtenderLeaderMotor.setTargetValue(m_globalTargetInches, ControlType.kMAXMotionPositionControl);
-}
-
-private void emergencyStop(String reason) {
-    stop();
+  private void emergencyStop(String reason) {
+    m_leader.stopMotor();
     m_isHomed = false;
     m_faulted = true;
     SmartDashboard.putString("Extender/Status", "CRITICAL FAILURE: " + reason);
-    // Printed once (the fault latches). Printing every 20ms floods the console
-    // stream to the Driver Station and adds to radio traffic.
+    // Reported once; the fault latches.
     DriverStation.reportError(">>> [EXTENDER] " + reason + " - re-home to clear", false);
-}
+  }
 
-  /**
-   * Sets the global target position for the extender to its maximum outward
-   * position.
-   * Movement will only occur if the extender is homed.
-   */
-  public void moveOut() {
-    // Safety check: Do not move if the system is not homed, as position is
-    // untrusted
-    /*if (!m_isHomed) {
-      return;
-    }*/
-    m_globalTargetInches = ExtenderConstants.kExtenderMotorOut;
+  /** Move fully out. */
+  public Command extend() {
+    return runOnce(() -> m_targetInches = ExtenderConstants.kExtenderMotorOut).withName("ExtenderOut");
+  }
+
+  /** Move fully in. */
+  public Command retract() {
+    return runOnce(() -> m_targetInches = ExtenderConstants.kExtenderMotorIn).withName("ExtenderIn");
   }
 
   /**
-   * Sets the global target position for the extender to its maximum inward
-   * (retracted) position.
-   * Movement will only occur if the extender is homed.
+   * Drive slowly into the retracted hard stop with soft limits off, then zero both encoders.
+   * Gives up after {@link ExtenderConstants#kHomingTimeoutSeconds} instead of pushing forever.
    */
-  public void moveIn() {
-    // Safety check: Do not move if the system is not homed
-    /*if (!m_isHomed) {
-      return;
-    }*/
-    m_globalTargetInches = ExtenderConstants.kExtenderMotorIn;
+  public Command home() {
+    return new FunctionalCommand(
+        () -> {
+          m_homing = true;
+          if (!GlobalConstants.IS_BENCHTOP) {
+            Sparks.apply(m_leader, ExtenderConfigs.homingConfig, "homing config");
+          }
+        },
+        () -> {
+          if (!GlobalConstants.IS_BENCHTOP) {
+            m_leader.setVoltage(ExtenderConstants.kHomingVoltage.get());
+          }
+        },
+        interrupted -> {
+          m_leader.stopMotor();
+          if (!interrupted) {
+            resetEncoders();
+          }
+          if (!GlobalConstants.IS_BENCHTOP) {
+            Sparks.apply(m_leader, ExtenderConfigs.leaderConfig, "restore soft limits");
+          }
+          m_homing = false;
+        },
+        () -> GlobalConstants.IS_BENCHTOP || isAtHome(),
+        this)
+        .withTimeout(ExtenderConstants.kHomingTimeoutSeconds)
+        .withName("HomeExtender");
   }
 
-  /**
-   * Resets the encoders of both extender motors to zero and sets the system as
-   * homed.
-   * This assumes the extender is in a known zero position (e.g., against a limit
-   * switch).
-   */
-  public void resetEncoders() {
-    m_ExtenderLeaderMotor.setPosition(0);
-    m_ExtenderFollowMotor.setPosition(0);
-    this.m_globalTargetInches = 0; // Reset target to zero
-    this.m_isHomed = true; // Extender is now square and trusted
-    this.m_faulted = false;
+  private void resetEncoders() {
+    m_leaderEncoder.setPosition(0);
+    m_followerEncoder.setPosition(0);
+    m_targetInches = ExtenderConstants.kExtenderMotorIn;
+    m_isHomed = true;
+    m_faulted = false;
     SmartDashboard.putString("Extender/Status", "READY");
-    SmartDashboard.putBoolean("Extender/SKEW_ERROR", false);
   }
 
-  /**
-   * Stops both extender motors immediately.
-   */
-  public void stop() {
-    m_ExtenderLeaderMotor.stop();
+  /** Both motors stalled against the hard stop. */
+  private boolean isAtHome() {
+    double threshold = ExtenderConstants.kMaxHomingVoltage.get();
+    return m_leader.getOutputCurrent() > threshold && m_follower.getOutputCurrent() > threshold;
   }
 
-  /**
-   * Retrieves the current position of a specified extender motor in inches.
-   * 
-   * @param motor The SparkMax motor to query.
-   * @return The position of the motor's encoder in inches.
-   */
-  public double getPositionInInches(MotorControllerWrapper motor) {
-    return motor.getPosition();
+  public boolean atTarget() {
+    return Math.abs(m_targetInches - getPositionInches()) < ExtenderConstants.kAtTargetTolerance.get();
   }
 
-  /**
-   * Checks if the extender mechanism is within a defined tolerance of its target
-   * position.
-   * 
-   * @param target The target position in inches to check against.
-   * @return True if the leader motor's position is within `kAtTargetTolerance` of
-   *         the target, false otherwise.
-   */
-  public boolean atTarget(double target) {
-    // Checking leader is usually enough, but you can check both for extra safety
-    return Math.abs(target - getPositionInInches(m_ExtenderLeaderMotor)) < ExtenderConstants.kAtTargetTolerance.get();
+  @Logged(name = "PositionInches")
+  public double getPositionInches() {
+    return m_leaderEncoder.getPosition();
   }
 
-  /**
-   * Sets the raw voltage for both extender motors.
-   * This method is typically used during homing procedures to bypass PID control
-   * and apply direct motor power.
-   * 
-   * @param voltage The voltage to apply to the motors.
-   */
-  public void setHomingVoltages(double voltage) {
-    // The follower mirrors the leader in hardware.
-    m_ExtenderLeaderMotor.setOutputVoltage(voltage);
+  @Logged(name = "FollowerPositionInches")
+  public double getFollowerPositionInches() {
+    return m_followerEncoder.getPosition();
   }
 
-  /**
-   * Checks if the extender mechanism is at its home (retracted) position,
-   * typically indicated
-   * by both motors drawing significant current due to hitting a mechanical stop
-   * during homing.
-   * 
-   * @return True if both leader and follower motors exceed the homing voltage
-   *         threshold, false otherwise.
-   */
-  public boolean isAtHome() {
-    return m_ExtenderLeaderMotor.getOutputCurrent() > ExtenderConstants.kMaxHomingVoltage.get()
-        && m_ExtenderFollowMotor.getOutputCurrent() > ExtenderConstants.kMaxHomingVoltage.get();
+  @Logged(name = "SkewInches")
+  public double getSkewInches() {
+    return Math.abs(getPositionInches() - getFollowerPositionInches());
   }
 
-  /**
-   * Sets the homing status of the extender.
-   * 
-   * @param homed True if the extender has been successfully homed, false
-   *              otherwise.
-   */
-  public void setIsHomed(boolean homed) {
-    this.m_isHomed = homed;
+  @Logged(name = "TargetInches")
+  public double getTargetInches() {
+    return m_targetInches;
   }
 
-  /**
-   * Prepares the extender motors for a homing sequence by applying specific
-   * homing configurations.
-   * This typically disables soft limits to allow the mechanism to reach its
-   * physical limits.
-   * Only applied to the leader motor; follower motor is expected to follow.
-   */
-  public void prepareForHoming() {
-    // Apply homing configuration to the leader motor, without resetting other
-    // parameters and without persisting to flash.
-    m_ExtenderLeaderMotor.setConfiguration(ExtenderConfigs.homingConfig);
+  @Logged(name = "LeaderCurrentAmps")
+  public double getLeaderCurrent() {
+    return m_leader.getOutputCurrent();
   }
 
-  /**
-   * Re-enables soft limits on the extender motors after a homing sequence is
-   * complete.
-   * This restores normal operational safety limits to the leader motor.
-   */
-  public void enableSoftLimits() {
-    // Apply the standard leader configuration to the leader motor, without
-    // resetting other parameters and without persisting to flash.
-    m_ExtenderLeaderMotor.setConfiguration(ExtenderConfigs.leaderConfig);
-    m_ExtenderFollowMotor.setConfiguration(ExtenderConfigs.followConfig);
+  @Logged(name = "FollowerCurrentAmps")
+  public double getFollowerCurrent() {
+    return m_follower.getOutputCurrent();
   }
 }

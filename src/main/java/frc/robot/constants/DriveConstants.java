@@ -40,7 +40,12 @@ public class DriveConstants {
     /** Derivative gain for the drive PID controller. */
     public static final TunableNumber kDriveD = TuningManager.register("Drive/kD", 0.0);
 
-    public static final TunableNumber kDriveV = TuningManager.register("Drive/kV", 0.0);
+    /**
+     * Drive velocity feedforward in volts per (m/s): full battery voltage at free speed.
+     * Same approach as REV's MAXSwerve template.
+     */
+    public static final TunableNumber kDriveV = TuningManager.register("Drive/kV",
+            12.0 / NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond);
 
     public static final TunableNumber kDriveS = TuningManager.register("Drive/kS", 0.0);
 

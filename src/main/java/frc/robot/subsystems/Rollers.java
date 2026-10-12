@@ -4,50 +4,35 @@
 
 package frc.robot.subsystems;
 
-import edu.wpi.first.wpilibj.DriverStation;
+import com.revrobotics.spark.SparkMax;
+
+import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import frc.robot.configs.RollerConfigs;
+import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.RollerConstants;
-import frc.robot.util.hardware.MotorControllerWrapper;
+import frc.robot.util.hardware.Sparks;
 
-/**
- * The Rollers subsystem controls the robot's roller mechanism,
- * typically used for intaking, indexing, or outtaking game pieces.
- */
-public class Rollers extends SubsystemBase { 
-   /** The motor responsible for driving the rollers. */
-   public final MotorControllerWrapper m_RollerMotor;
+/** Rollers that move game pieces through the robot toward the feeder. */
+@Logged(strategy = Logged.Strategy.OPT_IN)
+public class Rollers extends SubsystemBase {
+  private final SparkMax m_motor = Sparks.create(CanIdConstants.kRollerMotor, RollerConfigs.config);
 
-    /**
-     * Constructs a new Rollers subsystem.
-     * Initializes the roller motor and configures it with predefined settings.
-     */
-    public Rollers(MotorControllerWrapper motor) {
-      this.m_RollerMotor = motor;
-    }
+  /** Toward the feeder while held. */
+  public Command forward() {
+    return runEnd(() -> m_motor.set(RollerConstants.kRollerTargetSpeed.get()), m_motor::stopMotor)
+        .withName("RollerForward");
+  }
 
-    @Override
-    public void periodic() {
-        if (DriverStation.isDisabled()) {
-            if (RollerConstants.kRollerFF.hasChanged() || RollerConstants.kRollerStatic.hasChanged()) {
-                m_RollerMotor.setPID(0,0,0,RollerConstants.kRollerFF.get(), RollerConstants.kRollerStatic.get());
-            }
-        }
-    }
+  /** Back out of the robot while held. */
+  public Command reverse() {
+    return runEnd(() -> m_motor.set(-RollerConstants.kRollerTargetSpeed.get()), m_motor::stopMotor)
+        .withName("RollerReverse");
+  }
 
-    /**
-     * Turns the roller motor on at a specified speed.
-     * A positive speed typically means intake, while a negative speed means outtake.
-     * @param speed The speed to set the roller motor to, typically a value between -1.0 and 1.0.
-     */
-    public void rollerOn(double speed) {
-      this.m_RollerMotor.set(speed);
-    }
-
-    /**
-     * Turns the roller motor off by setting its speed to zero.
-     */
-    public void rollerOff(){
-      this.m_RollerMotor.set(0);
-    }
+  @Logged(name = "CurrentAmps")
+  public double getCurrent() {
+    return m_motor.getOutputCurrent();
+  }
 }
-  

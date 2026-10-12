@@ -1,32 +1,19 @@
 package frc.robot.configs;
 
-import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
-
-import frc.robot.constants.GlobalConstants;
-import frc.robot.constants.RollerConstants;
-
 import com.revrobotics.spark.config.SparkMaxConfig;
 
-public class RollerConfigs {
+import frc.robot.constants.GlobalConstants;
+
+/** Rollers. Run open-loop (percent output), so no closed-loop gains. */
+public final class RollerConfigs {
     public static final SparkMaxConfig config = new SparkMaxConfig();
 
-    static{
-        config.encoder
-            .positionConversionFactor(RollerConstants.kPositionFactor)
-            .velocityConversionFactor(RollerConstants.kPositionFactor);
-
-        config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder);
-
-        config.closedLoop.feedForward
-            .kS(RollerConstants.kRollerStatic.get())
-            .kV(RollerConstants.kRollerFF.get());
-
+    static {
         config.inverted(false);
         config.idleMode(IdleMode.kCoast);
         config.smartCurrentLimit(GlobalConstants.kLowCurrentLimit);
     }
 
+    private RollerConfigs() {}
 }
-
-

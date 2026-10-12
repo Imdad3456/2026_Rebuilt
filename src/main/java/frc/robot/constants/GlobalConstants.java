@@ -22,10 +22,4 @@ public class GlobalConstants {
         RobotController.getSerialNumber().trim().equalsIgnoreCase(BENCHTOP_SERIAL) || 
             RobotBase.isSimulation();
 
-    static {
-        System.out.println("******************************************");
-        System.out.println("DEBUG: RoboRIO Serial = " + RobotController.getSerialNumber());
-        System.out.println("DEBUG: Is Simulation = " + RobotBase.isSimulation());
-        System.out.println("******************************************");
-    }
 }

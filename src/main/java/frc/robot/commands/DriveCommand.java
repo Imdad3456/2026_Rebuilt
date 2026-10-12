@@ -4,101 +4,73 @@
 
 package frc.robot.commands;
 
-import frc.robot.util.diagnostics.RobotDiagnostics;
-
 import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.constants.OIConstants;
 import frc.robot.subsystems.DriveSubsystem;
+import frc.robot.util.diagnostics.RobotDiagnostics;
 
-/**
- * The DriveCommand enables continuous teleoperated driving of the swerve drivetrain.
- * It reads joystick inputs for X (forward/backward), Y (strafe), and Rotation,
- * applies a deadband, and commands the DriveSubsystem accordingly.
- * It supports both field-relative and robot-relative driving.
- */
+/** Teleop driving from the driver's stick. The drivetrain's default command. */
 public class DriveCommand extends Command {
-  /** The DriveSubsystem instance that this command will control. */
   private final DriveSubsystem m_drive;
-  /** Supplier for the X-axis (forward/backward) joystick input. */
-  private final DoubleSupplier m_xSupplier;
-  /** Supplier for the Y-axis (left/right strafe) joystick input. */
-  private final DoubleSupplier m_ySupplier;
-  /** Supplier for the rotation (Z-axis) joystick input. */
-  private final DoubleSupplier m_rotSupplier;
-  /** Supplier for the boolean indicating whether to use field-relative control. */
-  private final BooleanSupplier m_fieldRelativeSupplier;
+  private final DoubleSupplier m_forward;
+  private final DoubleSupplier m_left;
+  private final DoubleSupplier m_ccwRotation;
+  private final DoubleSupplier m_speedScale;
+  private final BooleanSupplier m_fieldRelative;
+
+  // Ramp the inputs: going 0 to full stick instantly pulls a huge current spike (brownouts).
+  private final SlewRateLimiter m_forwardLimiter = new SlewRateLimiter(OIConstants.kTranslationSlewRate);
+  private final SlewRateLimiter m_leftLimiter = new SlewRateLimiter(OIConstants.kTranslationSlewRate);
+  private final SlewRateLimiter m_rotLimiter = new SlewRateLimiter(OIConstants.kRotationSlewRate);
 
   /**
-   * Creates a new DriveCommand.
-   * This command is typically set as the default command for the DriveSubsystem,
-   * allowing for continuous driver control during teleoperated period.
-   *
-   * @param drive                 The DriveSubsystem instance to be controlled by this command.
-   * @param xSupplier             A DoubleSupplier that provides the desired speed in the X direction (forward/backward).
-   * @param ySupplier             A DoubleSupplier that provides the desired speed in the Y direction (left/right strafe).
-   * @param rotSupplier           A DoubleSupplier that provides the desired angular velocity (rotation).
-   * @param fieldRelativeSupplier A BooleanSupplier that indicates whether the movement
-   *                              should be relative to the field (true) or to the robot (false).
+   * @param forward forward input, -1..1 (positive = forward)
+   * @param left strafe input, -1..1 (positive = left)
+   * @param ccwRotation rotation input, -1..1 (positive = counter-clockwise)
+   * @param speedScale 0..1 multiplier on all three (the driver's speed slider)
+   * @param fieldRelative whether to drive relative to the driver's "forward"
    */
-  public DriveCommand(DriveSubsystem drive, DoubleSupplier xSupplier, DoubleSupplier ySupplier,
-      DoubleSupplier rotSupplier, BooleanSupplier fieldRelativeSupplier) {
+  public DriveCommand(DriveSubsystem drive, DoubleSupplier forward, DoubleSupplier left,
+      DoubleSupplier ccwRotation, DoubleSupplier speedScale, BooleanSupplier fieldRelative) {
     m_drive = drive;
-    m_xSupplier = xSupplier;
-    m_ySupplier = ySupplier;
-    m_rotSupplier = rotSupplier;
-    m_fieldRelativeSupplier = fieldRelativeSupplier;
-
-    // Declare that this command requires the DriveSubsystem, ensuring exclusive access.
+    m_forward = forward;
+    m_left = left;
+    m_ccwRotation = ccwRotation;
+    m_speedScale = speedScale;
+    m_fieldRelative = fieldRelative;
     addRequirements(drive);
   }
 
-  // No initialize method needed as continuous reading and driving happens in execute().
-  // @Override
-  // public void initialize() {}
+  @Override
+  public void initialize() {
+    // Start from rest so stale values from before auto can't jerk the robot.
+    m_forwardLimiter.reset(0);
+    m_leftLimiter.reset(0);
+    m_rotLimiter.reset(0);
+  }
 
-  /**
-   * Called every time the scheduler runs while the command is scheduled.
-   * This method continuously reads joystick inputs, applies a deadband for precision,
-   * and commands the DriveSubsystem to move.
-   */
   @Override
   public void execute() {
-    // Get joystick inputs and apply deadband to filter out small, unintended movements.
-    double xSpeed = -MathUtil.applyDeadband(m_xSupplier.getAsDouble(), OIConstants.kDriveDeadband);
-    double ySpeed = -MathUtil.applyDeadband(m_ySupplier.getAsDouble(), OIConstants.kDriveDeadband);
-    double rot = -MathUtil.applyDeadband(m_rotSupplier.getAsDouble(), OIConstants.kDriveDeadband);
+    double scale = m_speedScale.getAsDouble();
+    double forward = m_forwardLimiter.calculate(
+        MathUtil.applyDeadband(m_forward.getAsDouble(), OIConstants.kDriveDeadband)) * scale;
+    double left = m_leftLimiter.calculate(
+        MathUtil.applyDeadband(m_left.getAsDouble(), OIConstants.kDriveDeadband)) * scale;
+    double rot = m_rotLimiter.calculate(
+        MathUtil.applyDeadband(m_ccwRotation.getAsDouble(), OIConstants.kDriveDeadband)) * scale;
 
-    // Log what actually reaches the drivetrain (raw stick values are in the DS log).
-    RobotDiagnostics.recordDriveInput(xSpeed, ySpeed, rot);
-
-    // Drive the robot using the processed inputs and the current field-relative state.
-    m_drive.drive(xSpeed, ySpeed, rot, m_fieldRelativeSupplier.getAsBoolean());
+    // What actually reaches the drivetrain (raw stick values are in the DS log).
+    RobotDiagnostics.recordDriveInput(forward, left, rot, scale);
+    m_drive.drive(forward, left, rot, m_fieldRelative.getAsBoolean());
   }
 
-  /**
-   * Called once the command ends or is interrupted.
-   * Stops the robot's movement to prevent unexpected behavior.
-   * @param interrupted True if the command was interrupted by another, false otherwise.
-   */
   @Override
   public void end(boolean interrupted) {
-    // Stop the drive by commanding zero speeds in all directions.
-    m_drive.drive(0, 0, 0, false);
-  }
-
-  /**
-   * Returns true when the command should end.
-   * This command is designed to run continuously during teleoperated control
-   * and is typically interrupted by the driver releasing the joystick or a new command
-   * taking over the DriveSubsystem.
-   * @return Always false, as this command never finishes on its own.
-   */
-  @Override
-  public boolean isFinished() {
-    return false; // This command runs continuously
+    m_drive.stop();
   }
 }

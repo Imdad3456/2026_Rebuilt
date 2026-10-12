@@ -20,7 +20,7 @@ import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
-import frc.robot.util.hardware.RealSparkMax;
+import frc.robot.util.hardware.Sparks;
 
 /**
  * Competition-safe diagnostics, written only to the on-robot .wpilog (no NetworkTables
@@ -93,9 +93,10 @@ public final class RobotDiagnostics {
   private final DoubleLogEntry m_driveX;
   private final DoubleLogEntry m_driveY;
   private final DoubleLogEntry m_driveRot;
+  private final DoubleLogEntry m_driveSpeedScale;
 
   // Motors (one SPARK checked per loop, round robin)
-  private final List<RealSparkMax> m_motors;
+  private final List<SparkMax> m_motors;
   private final IntegerLogEntry[] m_motorFaults;
   private final IntegerLogEntry[] m_motorWarnings;
   private final StringLogEntry[] m_motorLastError;
@@ -155,9 +156,10 @@ public final class RobotDiagnostics {
     m_driveX = new DoubleLogEntry(log, "/Diag/Drive/InputX");
     m_driveY = new DoubleLogEntry(log, "/Diag/Drive/InputY");
     m_driveRot = new DoubleLogEntry(log, "/Diag/Drive/InputRot");
+    m_driveSpeedScale = new DoubleLogEntry(log, "/Diag/Drive/SpeedScale");
 
     // Snapshot: a motor created later must not outgrow the per-motor arrays below.
-    m_motors = List.copyOf(RealSparkMax.getInstances());
+    m_motors = List.copyOf(Sparks.all());
     int n = m_motors.size();
     m_motorFaults = new IntegerLogEntry[n];
     m_motorWarnings = new IntegerLogEntry[n];
@@ -195,8 +197,9 @@ public final class RobotDiagnostics {
   }
 
   /** Record the joystick values DriveCommand actually sends to the drivetrain. */
-  public static void recordDriveInput(double x, double y, double rot) {
+  public static void recordDriveInput(double x, double y, double rot, double speedScale) {
     if (s_instance != null) {
+      s_instance.m_driveSpeedScale.update(speedScale);
       s_instance.m_driveX.update(x);
       s_instance.m_driveY.update(y);
       s_instance.m_driveRot.update(rot);
@@ -357,8 +360,7 @@ public final class RobotDiagnostics {
     int i = m_nextMotor;
     m_nextMotor = (m_nextMotor + 1) % m_motors.size();
 
-    RealSparkMax motor = m_motors.get(i);
-    SparkMax spark = motor.getSparkMax();
+    SparkMax spark = m_motors.get(i);
     Faults faults = spark.getFaults();
     Warnings warnings = spark.getWarnings();
     REVLibError lastError = spark.getLastError();
@@ -370,7 +372,7 @@ public final class RobotDiagnostics {
     int newFaults = faults.rawBits & ~m_prevFaultBits[i];
     int newWarnings = warnings.rawBits & ~m_prevWarningBits[i];
     if (newFaults != 0 || newWarnings != 0) {
-      event("SPARK CAN " + motor.getDeviceId() + ":" + describe(faults, warnings), true);
+      event("SPARK CAN " + spark.getDeviceId() + ":" + describe(faults, warnings), true);
     }
     m_prevFaultBits[i] = faults.rawBits;
     m_prevWarningBits[i] = warnings.rawBits;

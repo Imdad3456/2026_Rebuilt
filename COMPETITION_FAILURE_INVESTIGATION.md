@@ -5,6 +5,19 @@ the confirmed code defects, and describes the diagnostics added so the next occu
 pinned down. Nothing here should be read as "the original failure is fixed". The code builds and
 the tests pass, but the failure has never been reproduced and no competition logs were available.
 
+> **Code structure has changed since this report.** The refactor that followed it removed the
+> `MotorControllerWrapper` / `RealSparkMax` / `MockSparkMax` / `HardwareFactory` layer (now
+> `util/hardware/Sparks.java`) and the single-purpose command classes (`LauncherOn`,
+> `HomeExtender`, …), which are now command methods on each subsystem. File names below
+> describe the code **as it was at competition**.
+>
+> **Field-relative "offset kept changing":** this was bug #10 below. The navX's `getAngle()` is
+> clockwise-positive, but WPILib's field-relative math expects counter-clockwise. Every degree
+> the robot turned moved the field-relative heading two degrees the wrong way, so "forward" kept
+> drifting as the robot rotated. It now uses `getRotation2d()`. "Forward" is a software offset
+> zeroed at the start of auto or with the driver's zero-heading button, not `navX.reset()`, which
+> applies asynchronously. If the gyro disconnects, driving falls back to robot-relative.
+
 ## The symptom
 
 - The robot worked normally in the pits.
@@ -195,7 +208,7 @@ No offset change was made without this measurement. Guessing wrong would turn mo
   tuning mode off.
 - **`DriveSubsystem`**: heading from `m_gyro.getRotation2d()` (CCW positive), and `getTurnRate()`
   sign to match.
-- **`RealSparkMax`**: every `configure()` result is checked, and failures are logged once with
+- **`RealSparkMax`** (now `Sparks`): every `configure()` result is checked, and failures are logged once with
   the CAN ID. All real SPARK MAX controllers are registered for fault monitoring.
 - **`RobotContainer`**: auto choices are named ("Do Nothing", "Simple Auto") so the logs say
   which ran. The drive command is kept for diagnostics.

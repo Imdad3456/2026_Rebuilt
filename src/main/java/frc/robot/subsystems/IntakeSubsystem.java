@@ -4,50 +4,43 @@
 
 package frc.robot.subsystems;
 
-import edu.wpi.first.wpilibj.DriverStation;
+import java.util.function.DoubleSupplier;
+
+import com.revrobotics.spark.SparkMax;
+
+import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
-import frc.robot.constants.IntakeConstants;
-import frc.robot.util.hardware.MotorControllerWrapper;
+import frc.robot.configs.IntakeConfigs;
+import frc.robot.constants.CanIdConstants;
+import frc.robot.util.hardware.Sparks;
 
-/**
- * The IntakeSubsystem controls the robot's intake mechanism,
- * responsible for acquiring and manipulating game pieces.
- */
+/** Front pickup rollers that pull game pieces into the robot. */
+@Logged(strategy = Logged.Strategy.OPT_IN)
 public class IntakeSubsystem extends SubsystemBase {
-  /** The motor responsible for driving the front pickup mechanism of the intake. */
-  private final MotorControllerWrapper m_FrontPickupMotor;
+  private final SparkMax m_motor = Sparks.create(CanIdConstants.kIntakeMotor, IntakeConfigs.config);
 
-  /**
-   * Constructs a new IntakeSubsystem.
-   * Initializes the intake motor and configures it with predefined settings.
-   */
-  public IntakeSubsystem(MotorControllerWrapper motor) {
-    this.m_FrontPickupMotor = motor;
+  /** Run inward while held, at a speed (0..1) read every loop (the operator's intake slider). */
+  public Command receive(DoubleSupplier speed) {
+    return runEnd(() -> m_motor.set(speed.getAsDouble()), m_motor::stopMotor).withName("IntakeReceive");
   }
 
-  @Override
-  public void periodic() {
-    if (DriverStation.isDisabled()) {
-      if (IntakeConstants.kIntakeFF.hasChanged() || IntakeConstants.kIntakeStatic.hasChanged()) {
-        m_FrontPickupMotor.setPID(0, 0, 0, IntakeConstants.kIntakeFF.get(), IntakeConstants.kIntakeStatic.get());
-      }
-    }
+  /** Run outward while held, at a speed (0..1) read every loop. */
+  public Command eject(DoubleSupplier speed) {
+    return runEnd(() -> m_motor.set(-speed.getAsDouble()), m_motor::stopMotor).withName("IntakeEject");
   }
 
-  /**
-   * Engages the intake motors at a specified speed.
-   * Positive speed typically causes the motors to pick up game pieces.
-   * Negative speed typically pushes game pieces out of the intake.
-   * @param speed The speed to set the intake motor to, typically a value between -1.0 and 1.0.
-   */
-  public void engageIntake(double speed) {
-    this.m_FrontPickupMotor.set(speed);
+  public Command stop() {
+    return runOnce(m_motor::stopMotor).withName("IntakeStop");
   }
 
-  /**
-   * Stops the intake motors.
-   */
-  public void stopIntake() {
-    this.m_FrontPickupMotor.set(0);
+  @Logged(name = "AppliedOutput")
+  public double getAppliedOutput() {
+    return m_motor.getAppliedOutput();
+  }
+
+  @Logged(name = "CurrentAmps")
+  public double getCurrent() {
+    return m_motor.getOutputCurrent();
   }
 }

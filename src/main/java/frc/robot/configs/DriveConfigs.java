@@ -32,7 +32,10 @@ public final class DriveConfigs {
             drivingConfig.closedLoop
                     .feedbackSensor(FeedbackSensor.kPrimaryEncoder) //
                     .pid(DriveConstants.kDriveP.get(), DriveConstants.kDriveI.get(), DriveConstants.kDriveD.get()) //
-                    .outputRange(-1, 1); //
+                    .outputRange(-1, 1) //
+                    // Without a feedforward the velocity loop is P-only and never reaches the
+                    // requested speed (sluggish, inconsistent driving).
+                    .feedForward.kV(DriveConstants.kDriveV.get()).kS(DriveConstants.kDriveS.get());
 
             // --- Turning Motor Configuration ---
             turningConfig

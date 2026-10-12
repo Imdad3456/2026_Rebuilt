@@ -4,48 +4,35 @@
 
 package frc.robot.subsystems;
 
-import edu.wpi.first.wpilibj.DriverStation;
+import com.revrobotics.spark.SparkMax;
+
+import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import frc.robot.configs.FeederConfigs;
+import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.FeederConstants;
-import frc.robot.util.hardware.MotorControllerWrapper;
+import frc.robot.util.hardware.Sparks;
 
-/**
- * The FeederSubsystem controls the robot's feeder mechanism, responsible for
- * moving game pieces (e.g., notes, balls) into the launcher or other systems.
- */
+/** Loads game pieces into the launcher. */
+@Logged(strategy = Logged.Strategy.OPT_IN)
 public class FeederSubsystem extends SubsystemBase {
-  /** The motor responsible for driving the feeder mechanism. */
-  private final MotorControllerWrapper m_FeederMotor;
-  
-  /**
-   * Constructs a new FeederSubsystem.
-   * Initializes the feeder motor and configures it with predefined settings.
-   */
-  public FeederSubsystem(MotorControllerWrapper motor) {
-    this.m_FeederMotor = motor;
+  private final SparkMax m_motor = Sparks.create(CanIdConstants.kFeederMotor, FeederConfigs.config);
+
+  /** Into the launcher while held. */
+  public Command feed() {
+    return runEnd(() -> m_motor.set(FeederConstants.kFeederSpeed.get()), m_motor::stopMotor)
+        .withName("FeederOn");
   }
 
-  @Override
-  public void periodic() {
-    if (DriverStation.isDisabled()) {
-      if (FeederConstants.kFeederFF.hasChanged() || FeederConstants.kFeederStatic.hasChanged()) {
-        m_FeederMotor.setPID(0, 0, 0, FeederConstants.kFeederFF.get(), FeederConstants.kFeederStatic.get());
-      }
-    }
+  /** Backwards while held, to clear a jam. */
+  public Command reverse() {
+    return runEnd(() -> m_motor.set(-FeederConstants.kFeederSpeed.get()), m_motor::stopMotor)
+        .withName("FeederReverse");
   }
 
-  /**
-   * Engages the feeder motor at a specified speed.
-   * @param speed The speed to set the feeder motor to, typically a value between -1.0 and 1.0.
-   */
-  public void engageFeeder(double speed) {
-    this.m_FeederMotor.set(speed);
-  }
-
-  /**
-   * Stops the feeder motor.
-   */
-  public void stopFeeder() {
-    this.m_FeederMotor.stop();
+  @Logged(name = "CurrentAmps")
+  public double getCurrent() {
+    return m_motor.getOutputCurrent();
   }
 }

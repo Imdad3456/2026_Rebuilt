@@ -60,23 +60,12 @@ public class LauncherConstants {
     /*
      ****** NON TUNABLE VARIABLES ******
      */
-    /** The target RPM for the launcher motor when it should be completely stopped. */
-    public static final double kLauncherMotorStop = 0.0;
-
-    /** The digital input port for the sensor that detects a ball in the launcher's hopper. */
-    public static final int kLauncherIdleSensor = 0;
-    
-    /** The time in seconds to wait for the hopper to be empty before turning off the launcher. */
-    public static final double kWaitForEmptyTime = 3.0;
-
     // direct motor - no gears, sprockets, chains etc.
     // measure with direct RPM
     public static final double kPositionFactor = 1.0;
     public static final double kVelocityFactor = 1.0;
 
     // values of the field components for the limelight calculations
-    /** The height of the target on the field, in inches. */
-    public static final double kTargetHeight = 72.0;
     /** The height of the AprilTag on the field, in inches. */
     public static final double kAprilTagHeight = 44.25;
     /** The height of the Limelight camera from the ground, in inches. */

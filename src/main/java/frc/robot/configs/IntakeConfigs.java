@@ -1,29 +1,19 @@
 package frc.robot.configs;
 
-import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
-
-import frc.robot.constants.GlobalConstants;
-import frc.robot.constants.IntakeConstants;
-
 import com.revrobotics.spark.config.SparkMaxConfig;
 
-public class IntakeConfigs {
+import frc.robot.constants.GlobalConstants;
+
+/** Front intake. Runs open-loop (percent output), so no closed-loop gains. */
+public final class IntakeConfigs {
     public static final SparkMaxConfig config = new SparkMaxConfig();
-    
+
     static {
-        config.encoder
-            .positionConversionFactor(IntakeConstants.kPositionFactor)
-            .velocityConversionFactor(IntakeConstants.kVelocityFactor);
-
-        config.closedLoop.feedbackSensor(FeedbackSensor.kPrimaryEncoder);
-
-        config.closedLoop.feedForward
-        .kS(IntakeConstants.kIntakeStatic.get())
-        .kV(IntakeConstants.kIntakeFF.get());
-
-        config.inverted(false);        
-        config.idleMode(IdleMode.kCoast); 
+        config.inverted(false);
+        config.idleMode(IdleMode.kCoast);
         config.smartCurrentLimit(GlobalConstants.kLowCurrentLimit);
     }
+
+    private IntakeConfigs() {}
 }

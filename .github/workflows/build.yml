@@ -1,0 +1,23 @@
+# Builds the robot code and runs the tests on every push and pull request,
+# so code that doesn't compile can't be merged unnoticed (as happened with 397c1e4).
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # BuildInfo reads the git commit
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build and test
+        run: |
+          chmod +x gradlew
+          ./gradlew build
