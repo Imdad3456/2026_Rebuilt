@@ -55,6 +55,14 @@ public final class ExtenderConstants {
     /** Leader/follower disagreement that trips the skew fault (Doyenne_2026 used 2 in). */
     public static final double kMaxSkew = Units.inchesToMeters(2.0);
 
+    /**
+     * Encoder-reset detection: a position change faster than this (m/s) is not real motion.
+     * Twice the physical top speed, so normal driving (even a slow loop) never trips it.
+     */
+    public static final double kMaxPlausibleSpeed = 2.0 * NeoMotorConstants.kFreeSpeedRpm * kVelocityFactor;
+    /** Plus this much (m), so small changes never count. */
+    public static final double kJumpMargin = Units.inchesToMeters(1.0);
+
     // Homing: drive gently into the retracted hard stop until both motors stall.
     public static final double kHomingVoltage = -2.4; // about 20% output
     /** Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. */

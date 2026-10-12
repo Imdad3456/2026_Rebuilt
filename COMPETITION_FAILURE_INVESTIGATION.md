@@ -268,7 +268,12 @@ tethered or practice-field setup and room to move.
 12. **Swerve checks** (first run only, on blocks): confirm all four wheels point straight when
     driving forward, and that `CommandedAngleRad` and `MeasuredAngleRad` match within a few
     degrees while steering.
-13. **Extender check** (on blocks): move it out and in. If `Extender/Status` reports a skew fault
+13. **Extender recovery check** (on blocks): with the box partly out, briefly unplug the leader
+    SPARK's power (or use the REV Hardware Client to reboot it). The dashboard should show
+    `Extender/Status` = `CRITICAL FAILURE: ENCODER JUMPED` and the box must not move until you
+    press home. Also hold the home button against an obstruction for 3 s: it must report
+    `HOMING FAILED` and stay stopped.
+14. **Extender check** (on blocks): move it out and in. If `Extender/Status` reports a skew fault
     immediately, the follower's encoder direction is opposite to the leader's. Report it. Don't
     raise the skew limit.
 
@@ -295,9 +300,12 @@ joystick enumeration or swerve hardware. Those need the checklist above on the r
 2. **Which code ran at competition.** Retrievable from the jar on the roboRIO if it hasn't been
    redeployed.
 3. **Swerve offsets.** Resolved from `Doyenne_2026`; confirm on blocks.
-4. **Electrical health** (battery age, radio power, CAN wiring and termination, main breaker,
+4. **Controllers:** the dashboard's `Controllers/OK` light checks each port has a stick with
+   enough axes and buttons, which catches a missing stick or swapped USB order. Still test both
+   sticks on the competition DS laptop and lock the order in the DS USB tab.
+5. **Electrical health** (battery age, radio power, CAN wiring and termination, main breaker,
    power connectors). Software can't detect or fix these, but the logs will now show their effects.
-5. **Hardware facts now come from `Doyenne_2026`** (Sept 25): TalonFX launcher, 3" wheels with a
+6. **Hardware facts now come from `Doyenne_2026`** (Sept 25): TalonFX launcher, 3" wheels with a
    12-tooth pinion, 36:1 extender with a 2.10" pulley, inverted feeder, no rollers (the intake
    drives the floor conveyor). Each was ported into this codebase.
-6. **The extender follower's encoder direction** in hardware-follow mode needs the on-robot check.
+7. **The extender follower's encoder direction** in hardware-follow mode needs the on-robot check.

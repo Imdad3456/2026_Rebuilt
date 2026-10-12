@@ -23,6 +23,7 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import frc.robot.constants.OIConstants;
 import frc.robot.util.hardware.Sparks;
 import frc.robot.util.hardware.Talons;
 
@@ -118,6 +119,7 @@ public final class RobotDiagnostics {
   private final boolean[] m_prevTalonConnected;
   private final int[] m_prevTalonFaultBits;
   private String m_prevHealthProblems = null;
+  private String m_prevControllerStatus = null;
 
   // Edge-detection state
   private boolean m_prevDsAttached = false;
@@ -278,6 +280,7 @@ public final class RobotDiagnostics {
       sampleCan();
       sampleTalons();
       publishHealth();
+      publishControllerCheck();
     }
     sampleNextMotor();
 
@@ -443,6 +446,45 @@ public final class RobotDiagnostics {
       m_prevTalonFaultBits[i] = faultBits;
       m_talonOk[i] = connected && faultBits == 0;
     }
+  }
+
+  /**
+   * Pre-match controller check for the drive team. Each port must have a controller with enough
+   * axes and buttons for what the code reads from it, which catches a missing stick and (usually)
+   * swapped USB order. Display only.
+   */
+  private void publishControllerCheck() {
+    String driver = checkController("Driver", OIConstants.kDriverJoystickPort,
+        Math.max(OIConstants.kDriveSpeedSliderAxis, 2) + 1,
+        Math.max(OIConstants.kZeroHeadingButton, OIConstants.kFieldRelativeToggleButton));
+    String operator = checkController("Operator", OIConstants.kOperatorJoystickPort,
+        Math.max(OIConstants.kShooterSpeedSliderAxis, OIConstants.kIntakeSpeedSliderAxis) + 1,
+        OIConstants.kLauncherButton);
+    boolean ok = driver == null && operator == null;
+    String status = ok ? "Both controllers OK"
+        : ((driver != null ? driver + " " : "") + (operator != null ? operator : "")).trim();
+    if (!status.equals(m_prevControllerStatus)) {
+      SmartDashboard.putBoolean("Controllers/OK", ok);
+      SmartDashboard.putString("Controllers/Status", status);
+      if (m_prevControllerStatus != null || !ok) {
+        event("CONTROLLER CHECK: " + status, !ok && DriverStation.isDSAttached());
+      }
+      m_prevControllerStatus = status;
+    }
+  }
+
+  /** Null if fine, otherwise what's wrong. */
+  private static String checkController(String role, int port, int axesNeeded, int buttonsNeeded) {
+    if (!DriverStation.isJoystickConnected(port)) {
+      return role + " (port " + port + ") not connected.";
+    }
+    int axes = DriverStation.getStickAxisCount(port);
+    int buttons = DriverStation.getStickButtonCount(port);
+    if (axes < axesNeeded || buttons < buttonsNeeded) {
+      return String.format("%s (port %d) is '%s' with %d axes/%d buttons, needs %d/%d - wrong stick or swapped?",
+          role, port, DriverStation.getJoystickName(port), axes, buttons, axesNeeded, buttonsNeeded);
+    }
+    return null;
   }
 
   /**

@@ -9,6 +9,7 @@ import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.FunctionalCommand;
@@ -24,8 +25,13 @@ import frc.robot.util.hardware.Sparks;
  * ExtenderConfigs.followConfig), so only the leader is ever commanded. The follower's encoder
  * is read only for the skew safety check.
  *
- * <p>Assumes the robot powers on with the box fully retracted (the boot position is zero).
- * Re-home with {@link #home()} to re-zero or to clear a safety fault.
+ * <p>Zero: the SPARKs' encoders start at 0 when they power on, and the rules require the robot to
+ * start with the box retracted, so power-on = home. The code never re-zeroes on startup, so a
+ * robot-code restart keeps the real position. If a SPARK itself reboots (brownout), its encoder
+ * snaps back to 0; that jump is detected and the extender stops until re-homed.
+ *
+ * <p>The extender is only driven while homed and not faulted. A failed or interrupted homing run
+ * leaves it stopped and un-homed. Re-home with {@link #home()} to recover.
  */
 @Logged(strategy = Logged.Strategy.OPT_IN)
 public class ExtenderSubsystem extends SubsystemBase {
@@ -35,8 +41,11 @@ public class ExtenderSubsystem extends SubsystemBase {
   private final RelativeEncoder m_followerEncoder = m_follower.getEncoder();
   private final SparkClosedLoopController m_controller = m_leader.getClosedLoopController();
 
-  /** Target position in meters. */
-  private double m_target = ExtenderConstants.kRetracted;
+  /** Target position in meters. Starts wherever the box is (0 on a real power-on). */
+  private double m_target;
+  private double m_prevLeaderPos;
+  private double m_prevFollowerPos;
+  private double m_prevTime = Double.NaN;
   /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
   private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
   /** The power-on position counts as home (the robot must start with the box retracted). */
@@ -47,8 +56,9 @@ public class ExtenderSubsystem extends SubsystemBase {
   private boolean m_homing = false;
 
   public ExtenderSubsystem() {
-    m_leaderEncoder.setPosition(0);
-    m_followerEncoder.setPosition(0);
+    // Deliberately no setPosition(0) here: see the class comment.
+    m_target = m_leaderEncoder.getPosition();
+    rememberPositions();
     SmartDashboard.putString("Extender/Status", "READY");
   }
 
@@ -66,17 +76,33 @@ public class ExtenderSubsystem extends SubsystemBase {
       }
     }
 
+    double now = Timer.getFPGATimestamp();
+    double leaderPos = m_leaderEncoder.getPosition();
+    double followerPos = m_followerEncoder.getPosition();
+    double dt = Double.isNaN(m_prevTime) ? 0.0 : now - m_prevTime;
+    boolean jumped = isEncoderJump(m_prevLeaderPos, leaderPos, dt)
+        || isEncoderJump(m_prevFollowerPos, followerPos, dt);
+    m_prevLeaderPos = leaderPos;
+    m_prevFollowerPos = followerPos;
+    m_prevTime = now;
+
     // Homing drives the motors itself and is how a fault gets cleared.
     if (m_homing) {
       return;
     }
 
-    if (m_faulted) {
+    if (jumped) {
+      emergencyStop("ENCODER JUMPED (a SPARK probably rebooted)");
+      return;
+    }
+
+    // Only drive while the position is trusted.
+    if (m_faulted || !m_isHomed) {
       m_leader.stopMotor();
       return;
     }
 
-    double skew = Math.abs(m_leaderEncoder.getPosition() - m_followerEncoder.getPosition());
+    double skew = Math.abs(leaderPos - followerPos);
     if (skew > ExtenderConstants.kMaxSkew) {
       emergencyStop(String.format("SKEW DETECTED: %.2f in", Units.metersToInches(skew)));
       return;
@@ -132,13 +158,10 @@ public class ExtenderSubsystem extends SubsystemBase {
         },
         interrupted -> {
           m_leader.stopMotor();
-          if (!interrupted) {
-            resetEncoders();
-          }
           if (!GlobalConstants.IS_BENCHTOP) {
             Sparks.apply(m_leader, ExtenderConfigs.softLimitsOn, "soft limits back on");
           }
-          m_homing = false;
+          finishHoming(!interrupted);
         },
         () -> GlobalConstants.IS_BENCHTOP || isAtHome(),
         this)
@@ -146,13 +169,58 @@ public class ExtenderSubsystem extends SubsystemBase {
         .withName("HomeExtender");
   }
 
-  private void resetEncoders() {
-    m_leaderEncoder.setPosition(0);
-    m_followerEncoder.setPosition(0);
-    m_target = ExtenderConstants.kRetracted;
-    m_isHomed = true;
-    m_faulted = false;
-    SmartDashboard.putString("Extender/Status", "READY");
+  /**
+   * End of a homing run. Success zeroes the encoders and clears any fault. Failure (timeout, or
+   * interrupted by another command) leaves the extender stopped and un-homed: the position is not
+   * trusted, so it must not resume moving to its old target.
+   */
+  void finishHoming(boolean succeeded) {
+    m_homing = false;
+    if (succeeded) {
+      m_leaderEncoder.setPosition(0);
+      m_followerEncoder.setPosition(0);
+      rememberPositions();
+      m_target = ExtenderConstants.kRetracted;
+      m_isHomed = true;
+      m_faulted = false;
+      SmartDashboard.putString("Extender/Status", "READY");
+    } else {
+      m_leader.stopMotor();
+      m_isHomed = false;
+      m_target = ExtenderConstants.kRetracted;
+      SmartDashboard.putString("Extender/Status", "HOMING FAILED - press home again");
+      DriverStation.reportWarning(">>> [EXTENDER] homing did not finish; extender stopped until re-homed", false);
+    }
+  }
+
+  /** The zeroing above is an expected jump; don't flag it next loop. */
+  private void rememberPositions() {
+    m_prevLeaderPos = m_leaderEncoder.getPosition();
+    m_prevFollowerPos = m_followerEncoder.getPosition();
+    m_prevTime = Double.NaN;
+  }
+
+  /**
+   * True if a position changed more than the mechanism can physically move in {@code dtSeconds}
+   * (plus margin), which means the encoder was reset, e.g. its SPARK rebooted. A jump that lands
+   * near the current position doesn't matter, so tiny changes never count.
+   */
+  static boolean isEncoderJump(double previous, double current, double dtSeconds) {
+    if (dtSeconds <= 0) {
+      return false;
+    }
+    double maxMove = ExtenderConstants.kMaxPlausibleSpeed * dtSeconds + ExtenderConstants.kJumpMargin;
+    return Math.abs(current - previous) > maxMove;
+  }
+
+  @Logged(name = "Homed")
+  public boolean isHomed() {
+    return m_isHomed;
+  }
+
+  @Logged(name = "Faulted")
+  public boolean isFaulted() {
+    return m_faulted;
   }
 
   /** Both motors stalled against the hard stop for a moment. */
