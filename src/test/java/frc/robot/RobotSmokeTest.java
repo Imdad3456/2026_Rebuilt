@@ -23,26 +23,28 @@ public class RobotSmokeTest {
   @Test
   void realRobotSurvivesAutoDisabledTeleopCycles() {
     assertTrue(HAL.initialize(500, 0));
-    Robot robot = new Robot();
-    robot.robotInit();
-    for (String name : new String[] {"Intake", "IntakeStop", "SpinUp", "Shoot", "ExtenderOut", "ExtenderIn"}) {
-      assertTrue(NamedCommands.hasCommand(name), "PathPlanner named command missing: " + name);
-    }
-    for (int match = 0; match < 3; match++) {
-      setMode(true, true);
-      robot.autonomousInit();
-      for (int i = 0; i < 50; i++) { robot.autonomousPeriodic(); robot.robotPeriodic(); }
+    try (Robot robot = new Robot()) {
+      robot.robotInit();
+      for (String name : new String[] {"Intake", "IntakeStop", "SpinUp", "Shoot", "ExtenderOut", "ExtenderIn"}) {
+        assertTrue(NamedCommands.hasCommand(name), "PathPlanner named command missing: " + name);
+      }
+      for (int match = 0; match < 3; match++) {
+        setMode(true, true);
+        robot.autonomousInit();
+        for (int i = 0; i < 50; i++) { robot.autonomousPeriodic(); robot.robotPeriodic(); }
 
-      setMode(false, false);
-      robot.disabledInit();
-      for (int i = 0; i < 20; i++) { robot.disabledPeriodic(); robot.robotPeriodic(); }
+        setMode(false, false);
+        robot.disabledInit();
+        for (int i = 0; i < 20; i++) { robot.disabledPeriodic(); robot.robotPeriodic(); }
 
-      setMode(true, false);
-      robot.teleopInit();
-      for (int i = 0; i < 50; i++) { robot.teleopPeriodic(); robot.robotPeriodic(); }
-      assertTrue(robot.getContainerForTest().getDriveCommand().isScheduled(),
-          "DriveCommand not running in teleop, match " + match);
+        setMode(true, false);
+        robot.teleopInit();
+        for (int i = 0; i < 50; i++) { robot.teleopPeriodic(); robot.robotPeriodic(); }
+        assertTrue(robot.getContainerForTest().getDriveCommand().isScheduled(),
+            "DriveCommand not running in teleop, match " + match);
+      }
+    } finally {
+      CommandScheduler.getInstance().cancelAll();
     }
-    CommandScheduler.getInstance().cancelAll();
   }
 }

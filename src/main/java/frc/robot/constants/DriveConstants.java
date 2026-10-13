@@ -62,9 +62,9 @@ public class DriveConstants {
 
     // Chassis configuration
     /** The track width of the robot chassis, measured in meters. */
-    public static final double kTrackWidth = Units.inchesToMeters(26);
+    public static final double kTrackWidth = Units.inchesToMeters(26.5);
     /** The wheel base of the robot chassis, measured in meters. */
-    public static final double kWheelBase = Units.inchesToMeters(26);
+    public static final double kWheelBase = Units.inchesToMeters(26.5);
 
     /**
      * Defines the swerve drive kinematics, specifying the positions of each wheel relative to the robot's center.

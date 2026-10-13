@@ -154,15 +154,8 @@ public class DriveSubsystem extends SubsystemBase {
     double yMps = ySpeed * DriveConstants.kAdjustedMaxSpeedMbpsTeleOp;
     double rotRadPerSec = rot * DriveConstants.kMaxAngularSpeed.get();
 
-    // No input: stop, but keep each wheel pointing where it is. Otherwise every module snaps
-    // back to straight ahead each time the stick is released.
-    if (xSpeed == 0 && ySpeed == 0 && rot == 0) {
-      for (MAXSwerveModule module : m_modules) {
-        module.setDesiredState(new SwerveModuleState(0, module.getState().angle));
-      }
-      return;
-    }
-
+    // With zero input, WPILib's kinematics returns the last wheel angles at zero speed, so the
+    // wheels stop where they are instead of snapping straight.
     ChassisSpeeds speeds = fieldRelative && isGyroConnected()
         ? ChassisSpeeds.fromFieldRelativeSpeeds(xMps, yMps, rotRadPerSec, getDriverHeading())
         : new ChassisSpeeds(xMps, yMps, rotRadPerSec);
