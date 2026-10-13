@@ -44,8 +44,6 @@ public final class ExtenderConstants {
     public static final double kMaxAcceleration = 1.0; // m/s^2
 
     public static final double kAllowedProfileError = Units.inchesToMeters(0.5);
-    /** Within this of the target counts as "at target". */
-    public static final double kAtTargetTolerance = Units.inchesToMeters(0.1);
 
     // Positions
     public static final double kRetracted = 0.0;

@@ -230,10 +230,6 @@ public class ExtenderSubsystem extends SubsystemBase {
         m_leader.getOutputCurrent() > threshold && m_follower.getOutputCurrent() > threshold);
   }
 
-  public boolean atTarget() {
-    return Math.abs(m_target - m_leaderEncoder.getPosition()) < ExtenderConstants.kAtTargetTolerance;
-  }
-
   @Logged(name = "PositionInches")
   public double getPositionInches() {
     return Units.metersToInches(m_leaderEncoder.getPosition());

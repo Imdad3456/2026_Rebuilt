@@ -25,8 +25,7 @@ public final class CanIdConstants {
     public static final int kExtenderMotor1 = 20;
     public static final int kExtenderMotor2 = 21;
 
-    public static final int kClimberMotor1 = 25;
-    public static final int kClimberMotor2 = 26;
+    // Climber (25, 26): not installed. Its code was removed; it is in commit 44d616d.
 
     public static final int kIntakeMotor = 10;
 

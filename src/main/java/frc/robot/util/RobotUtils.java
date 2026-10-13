@@ -22,15 +22,4 @@ public class RobotUtils {
     public static double toVelocityPerSecond(double positionFactor) {
         return positionFactor / 60.0;
     }
-
-    /**
-     * Calculates the distance traveled given a velocity and time.
-     * Result is in the same unit as velocity * time.
-     * @param velocity The velocity of the object.
-     * @param time The time duration.
-     * @return The distance traveled.
-     */
-    public static double calculateDistance(double velocity, double time) {
-        return velocity * time;
-    }
 }

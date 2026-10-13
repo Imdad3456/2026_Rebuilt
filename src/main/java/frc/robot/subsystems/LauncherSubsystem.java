@@ -14,6 +14,7 @@ import com.ctre.phoenix6.hardware.TalonFX;
 
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.networktables.DoubleSubscriber;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
@@ -48,6 +49,13 @@ public class LauncherSubsystem extends SubsystemBase {
   private final DoubleSubscriber m_llTagId;
   private final DoubleSubscriber m_llTy;
 
+  /**
+   * At speed, held steady for a moment. Drops immediately when a shot pulls the RPM down, so the
+   * next ball waits for the flywheel to recover instead of going out under-speed.
+   */
+  private final Debouncer m_readyDebouncer = new Debouncer(LauncherConstants.kReadySettleSeconds, Debouncer.DebounceType.kRising);
+  private boolean m_readyToFeed = false;
+
   /** RPM requested by an active shot, or 0 when not shooting. */
   private double m_shotRPM = 0.0;
   private boolean m_idleEnabled = false;
@@ -78,6 +86,8 @@ public class LauncherSubsystem extends SubsystemBase {
         Talons.check(m_motor, "gain update", m_motor.getConfigurator().apply(gains));
       }
     }
+
+    m_readyToFeed = m_readyDebouncer.calculate(atSpeed());
 
     double target = getTargetRPM();
     if (target > 0) {
@@ -133,6 +143,12 @@ public class LauncherSubsystem extends SubsystemBase {
     double tolerance = LauncherConstants.kToleranceRPM.get();
     return m_shotRPM > LauncherConstants.kIdleRPM.get() + tolerance
         && Math.abs(m_shotRPM - getActualRPM()) < tolerance;
+  }
+
+  /** Safe to feed a ball: at shot speed and steady. Updated once per loop. */
+  @Logged(name = "ReadyToFeed")
+  public boolean isReadyToFeed() {
+    return m_readyToFeed;
   }
 
   /** Map a 0..1 slider position onto the min..max shot RPM range. */

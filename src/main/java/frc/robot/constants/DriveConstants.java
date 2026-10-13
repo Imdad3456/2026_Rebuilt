@@ -22,13 +22,9 @@ public class DriveConstants {
 
     /** Speed adjustment factor for teleoperated driving. Multiplied by theoretical max speed. */
     public static final TunableNumber speedAdjustTeleOp = TuningManager.register("Drive/speedAdjustTeleOp", 0.9);
-    /** Speed adjustment factor for autonomous driving. Multiplied by theoretical max speed. */
-    public static final TunableNumber speedAdjustAuto = TuningManager.register("Drive/speedAdjustAuto", 0.5);
             
     /** Maximum adjusted speed for teleoperated driving, in meters per second. */
     public static final double kAdjustedMaxSpeedMbpsTeleOp = NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond * speedAdjustTeleOp.get();
-    /** Maximum adjusted speed for autonomous driving, in meters per second. */
-    public static final double kAdjustedMaxSpeedMbpsAuto = NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond * speedAdjustAuto.get();
     
     /** Maximum angular speed of the robot, in radians per second. */
     public static final TunableNumber kMaxAngularSpeed = TuningManager.register("Drive/kMaxAngularSpeed", 2 * Math.PI); // radians per second
@@ -89,9 +85,6 @@ public class DriveConstants {
     public static final double kBackLeftChassisAngularOffset = Math.PI;
     /** Angular offset for the back-right swerve module, in radians. */
     public static final double kBackRightChassisAngularOffset = Math.PI / 2;
-
-    /** Indicates if the gyroscope is reversed. */
-    public static final boolean kGyroReversed = false;
 
     /** Front-left module angle in X-mode, in degrees. */
     public static final double kFrontLeftXMode = 45.0;

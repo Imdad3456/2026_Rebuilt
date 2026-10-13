@@ -2,6 +2,7 @@ package frc.robot;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.pathplanner.lib.auto.NamedCommands;
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
@@ -24,6 +25,9 @@ public class RobotSmokeTest {
     assertTrue(HAL.initialize(500, 0));
     Robot robot = new Robot();
     robot.robotInit();
+    for (String name : new String[] {"Intake", "IntakeStop", "SpinUp", "Shoot", "ExtenderOut", "ExtenderIn"}) {
+      assertTrue(NamedCommands.hasCommand(name), "PathPlanner named command missing: " + name);
+    }
     for (int match = 0; match < 3; match++) {
       setMode(true, true);
       robot.autonomousInit();

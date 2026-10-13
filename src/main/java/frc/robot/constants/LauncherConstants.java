@@ -12,6 +12,8 @@ public final class LauncherConstants {
     public static final TunableNumber kIdleRPM = TuningManager.register("Launcher/IdleRPM", 480);
     /** Within this many RPM of the target counts as "at speed". */
     public static final TunableNumber kToleranceRPM = TuningManager.register("Launcher/ToleranceRPM", 180);
+    /** How long the flywheel must stay at speed before (re)starting the feeder. */
+    public static final double kReadySettleSeconds = 0.1;
     /** Shooter slider all the way down. */
     public static final TunableNumber kMinShotRPM = TuningManager.register("Launcher/MinShotRPM", 1500);
     /** Shooter slider all the way up. */

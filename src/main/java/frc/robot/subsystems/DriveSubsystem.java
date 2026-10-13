@@ -232,8 +232,28 @@ public class DriveSubsystem extends SubsystemBase {
     return m_odometry.getPoseMeters();
   }
 
+  /**
+   * Set where the robot is on the field. PathPlanner calls this at the start of a path auto with
+   * the path's starting pose. Because that tells us which way the robot faces on the field,
+   * field-relative "forward" is set from it too, so an auto that starts at an angle doesn't leave
+   * teleop driving skewed.
+   */
   public void resetOdometry(Pose2d pose) {
     m_odometry.resetPosition(getGyroRotation(), getModulePositions(), pose);
+    setDriverForwardFromField(pose.getRotation());
+  }
+
+  /**
+   * Driver "forward" is away from our driver station: +X on the field for blue, -X for red.
+   * Given the robot's field heading, work out which gyro reading that corresponds to.
+   */
+  private void setDriverForwardFromField(Rotation2d fieldHeading) {
+    Rotation2d allianceForward = DriverStation.getAlliance().orElse(DriverStation.Alliance.Blue)
+        == DriverStation.Alliance.Red ? Rotation2d.k180deg : Rotation2d.kZero;
+    // driverHeading = gyro - m_driverForward must equal fieldHeading - allianceForward.
+    m_driverForward = getGyroRotation().minus(fieldHeading.minus(allianceForward));
+    RobotDiagnostics.logEvent("DRIVER HEADING SET FROM FIELD POSE (field heading "
+        + fieldHeading.getDegrees() + " deg, driver heading " + getDriverHeadingDegrees() + " deg)");
   }
 
   /** Robot-relative chassis speeds measured from the modules. */

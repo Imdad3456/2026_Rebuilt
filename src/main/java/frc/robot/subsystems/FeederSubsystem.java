@@ -4,6 +4,8 @@
 
 package frc.robot.subsystems;
 
+import java.util.function.BooleanSupplier;
+
 import com.revrobotics.spark.SparkMax;
 
 import edu.wpi.first.epilogue.Logged;
@@ -19,10 +21,15 @@ import frc.robot.util.hardware.Sparks;
 public class FeederSubsystem extends SubsystemBase {
   private final SparkMax m_motor = Sparks.create(CanIdConstants.kFeederMotor, FeederConfigs.config);
 
-  /** Into the launcher while held. */
-  public Command feed() {
-    return runEnd(() -> m_motor.set(FeederConstants.kFeederSpeed.get()), m_motor::stopMotor)
-        .withName("FeederOn");
+  /**
+   * Feed while {@code ready} is true and pause while it's false, for as long as this command runs.
+   * Used for shooting: each ball waits until the flywheel is back up to speed.
+   */
+  public Command feedWhile(BooleanSupplier ready) {
+    return runEnd(
+        () -> m_motor.set(ready.getAsBoolean() ? FeederConstants.kFeederSpeed.get() : 0.0),
+        m_motor::stopMotor)
+        .withName("FeedWhenReady");
   }
 
   /** Backwards while held, to clear a jam. */

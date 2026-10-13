@@ -22,6 +22,8 @@ public final class OIConstants {
     public static final double kMinDriveSpeedScale = 0.25;
     /** Press to make the robot's current facing "forward" for field-relative driving. VERIFY. */
     public static final int kZeroHeadingButton = 2;
+    /** Hold to lock the wheels in an X (hard to push). */
+    public static final int kXLockButton = 4;
     /** Press to switch between field-relative and robot-relative driving. VERIFY. */
     public static final int kFieldRelativeToggleButton = 3;
 
@@ -46,8 +48,6 @@ public final class OIConstants {
     public static final int kLauncherIdleOnButton = 16;
     public static final int kLauncherIdleOffButton = 17;
     public static final int kExtenderHomeButton = 8;
-    public static final int kClimberExtendButton = 1;
-    public static final int kClimberRetractButton = 2;
 
     /** Convert a slider's raw -1..1 reading to 0..1. */
     public static double sliderToPercent(double raw, boolean inverted) {

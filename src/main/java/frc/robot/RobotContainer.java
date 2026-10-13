@@ -4,7 +4,10 @@
 
 package frc.robot;
 
+import java.util.function.DoubleSupplier;
+
 import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.auto.NamedCommands;
 
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
@@ -14,6 +17,7 @@ import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
 import frc.robot.commands.Autos;
 import frc.robot.commands.DriveCommand;
+import frc.robot.constants.AutoConstants;
 import frc.robot.constants.IntakeConstants;
 import frc.robot.constants.OIConstants;
 import frc.robot.subsystems.DriveSubsystem;
@@ -35,7 +39,6 @@ public class RobotContainer {
   private final ExtenderSubsystem m_extender = new ExtenderSubsystem();
   @Logged(name = "Feeder")
   private final FeederSubsystem m_feeder = new FeederSubsystem();
-  // Climber not installed yet: private final ClimberSubsystem m_climber = new ClimberSubsystem();
 
   private final CommandJoystick m_driver = new CommandJoystick(OIConstants.kDriverJoystickPort);
   private final CommandJoystick m_operator = new CommandJoystick(OIConstants.kOperatorJoystickPort);
@@ -58,6 +61,7 @@ public class RobotContainer {
 
     setFieldRelative(true);
     configureBindings();
+    registerNamedCommands();
 
     // PathPlanner autos (if its settings are deployed) plus the hand-written ones.
     m_autoChooser = AutoBuilder.isConfigured() ? AutoBuilder.buildAutoChooser() : new SendableChooser<>();
@@ -70,6 +74,8 @@ public class RobotContainer {
     // ---- Driver ----
     m_driver.button(OIConstants.kZeroHeadingButton)
         .onTrue(Commands.runOnce(m_drive::zeroDriverHeading).ignoringDisable(true).withName("ZeroHeading"));
+    // Hold to lock the wheels in an X so the robot is hard to push (defense, or holding still to shoot).
+    m_driver.button(OIConstants.kXLockButton).whileTrue(m_drive.run(m_drive::setX).withName("XLock"));
     m_driver.button(OIConstants.kFieldRelativeToggleButton)
         .onTrue(Commands.runOnce(() -> setFieldRelative(!m_fieldRelative)).ignoringDisable(true)
             .withName("ToggleFieldRelative"));
@@ -86,14 +92,37 @@ public class RobotContainer {
     m_operator.button(OIConstants.kExtenderInButton).onTrue(m_intake.stop().alongWith(m_extender.retract()));
     m_operator.button(OIConstants.kExtenderHomeButton).onTrue(m_extender.home());
 
-    // Shoot: spin up to the shooter-slider RPM, and only feed once at speed. Feeding into a
-    // flywheel that isn't up to speed is what jammed the loader.
-    m_operator.button(OIConstants.kLauncherButton)
-        .whileTrue(m_launcher.spinUp(this::getShooterRPM)
-            .alongWith(Commands.waitUntil(m_launcher::atSpeed).andThen(m_feeder.feed())));
+    // Shoot: spin up to the shooter-slider RPM and feed only while the flywheel is at speed.
+    // After each ball the RPM dips; the feeder pauses until it recovers, so every ball leaves at
+    // the same speed and nothing gets fed into a slowed flywheel (which is what jammed it).
+    m_operator.button(OIConstants.kLauncherButton).whileTrue(shoot(this::getShooterRPM));
 
     m_operator.button(OIConstants.kLauncherIdleOnButton).onTrue(m_launcher.idle());
     m_operator.button(OIConstants.kLauncherIdleOffButton).onTrue(m_launcher.off());
+  }
+
+  /**
+   * Spin the launcher to {@code rpm} and feed only while it's ready (at speed and steady).
+   * Runs until interrupted.
+   */
+  private Command shoot(DoubleSupplier rpm) {
+    return m_launcher.spinUp(rpm).alongWith(m_feeder.feedWhile(m_launcher::isReadyToFeed))
+        .withName("Shoot");
+  }
+
+  /**
+   * Commands PathPlanner autos can use by name (event markers, or command blocks in an .auto).
+   * Must be registered before any auto is built. "Intake" and "SpinUp" run until the path or
+   * group ends them; "Shoot" ends on its own after {@link AutoConstants#kShootSeconds}.
+   */
+  private void registerNamedCommands() {
+    NamedCommands.registerCommand("Intake", m_intake.receive(() -> IntakeConstants.kAutoSpeed));
+    NamedCommands.registerCommand("IntakeStop", m_intake.stop());
+    NamedCommands.registerCommand("SpinUp", m_launcher.spinUp(AutoConstants.kAutoShotRPM::get));
+    NamedCommands.registerCommand("Shoot",
+        shoot(AutoConstants.kAutoShotRPM::get).withTimeout(AutoConstants.kShootSeconds));
+    NamedCommands.registerCommand("ExtenderOut", m_extender.extend());
+    NamedCommands.registerCommand("ExtenderIn", m_extender.retract());
   }
 
   /** Driver slider: fraction of max drive speed, from kMinDriveSpeedScale to 1. */

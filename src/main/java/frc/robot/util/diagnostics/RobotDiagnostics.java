@@ -456,7 +456,8 @@ public final class RobotDiagnostics {
   private void publishControllerCheck() {
     String driver = checkController("Driver", OIConstants.kDriverJoystickPort,
         Math.max(OIConstants.kDriveSpeedSliderAxis, 2) + 1,
-        Math.max(OIConstants.kZeroHeadingButton, OIConstants.kFieldRelativeToggleButton));
+        Math.max(OIConstants.kXLockButton,
+            Math.max(OIConstants.kZeroHeadingButton, OIConstants.kFieldRelativeToggleButton)));
     String operator = checkController("Operator", OIConstants.kOperatorJoystickPort,
         Math.max(OIConstants.kShooterSpeedSliderAxis, OIConstants.kIntakeSpeedSliderAxis) + 1,
         OIConstants.kLauncherButton);
