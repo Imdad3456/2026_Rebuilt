@@ -34,6 +34,14 @@ public class MechanismLimitsTest {
   }
 
   @Test
+  void extenderHoldsWithoutHunting() {
+    // A tolerance band, and targets that sit inside the soft limits rather than on them.
+    assertTrue(ExtenderConstants.kAllowedClosedLoopError > 0);
+    assertTrue(ExtenderConstants.kSoftLimitMargin > ExtenderConstants.kAllowedClosedLoopError,
+        "a target inside its tolerance band must not reach a soft limit");
+  }
+
+  @Test
   void driveFeedforwardAtTeleopMaxFitsInVoltageCompensation() {
     double volts = DriveConstants.kDriveV.get() * DriveConstants.kAdjustedMaxSpeedMbpsTeleOp;
     assertTrue(volts < GlobalConstants.kMedVoltageCompensation, "teleop max needs " + volts + " V");

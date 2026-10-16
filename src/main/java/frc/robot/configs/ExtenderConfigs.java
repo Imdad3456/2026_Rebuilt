@@ -1,5 +1,6 @@
 package frc.robot.configs;
 
+import com.revrobotics.spark.ClosedLoopSlot;
 import com.revrobotics.spark.FeedbackSensor;
 import com.revrobotics.spark.config.MAXMotionConfig.MAXMotionPositionMode;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
@@ -24,7 +25,8 @@ public final class ExtenderConfigs {
             .velocityConversionFactor(ExtenderConstants.kVelocityFactor);
         leaderConfig.closedLoop
             .feedbackSensor(FeedbackSensor.kPrimaryEncoder)
-            .pid(ExtenderConstants.kP.get(), ExtenderConstants.kI.get(), ExtenderConstants.kD.get());
+            .pid(ExtenderConstants.kP.get(), ExtenderConstants.kI.get(), ExtenderConstants.kD.get())
+            .allowedClosedLoopError(ExtenderConstants.kAllowedClosedLoopError, ClosedLoopSlot.kSlot0);
         leaderConfig.closedLoop.feedForward
             .kV(ExtenderConstants.kV.get())
             .kS(ExtenderConstants.kS.get());
@@ -36,9 +38,9 @@ public final class ExtenderConfigs {
         // Soft limits relative to the boot/homed zero, so a bad command can't drive it into the frame.
         leaderConfig.softLimit
             .forwardSoftLimitEnabled(true)
-            .forwardSoftLimit(ExtenderConstants.kExtended)
+            .forwardSoftLimit(ExtenderConstants.kExtended + ExtenderConstants.kSoftLimitMargin)
             .reverseSoftLimitEnabled(true)
-            .reverseSoftLimit(ExtenderConstants.kRetracted);
+            .reverseSoftLimit(ExtenderConstants.kRetracted - ExtenderConstants.kSoftLimitMargin);
         leaderConfig
             .inverted(false)
             // Brake (Doyenne_2026 used coast) so the box doesn't drift when disabled.

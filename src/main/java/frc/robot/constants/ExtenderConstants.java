@@ -44,10 +44,21 @@ public final class ExtenderConstants {
     public static final double kMaxAcceleration = 1.0; // m/s^2
 
     public static final double kAllowedProfileError = Units.inchesToMeters(0.5);
+    /**
+     * Within this of the target the controller stops correcting. Without it, the 36:1 gearing's
+     * slop makes the box overshoot and hunt in and out around the target (REV: "useful in
+     * preventing oscillation around the setpoint"). Doyenne_2026 used 0.1 in.
+     */
+    public static final double kAllowedClosedLoopError = Units.inchesToMeters(0.25);
 
     // Positions
     public static final double kRetracted = 0.0;
     public static final double kExtended = Units.inchesToMeters(12.0);
+    /**
+     * Soft limits sit this far beyond the in/out targets. With the limit exactly on the target, any
+     * tiny overshoot hits the limit, cuts the output, and the box bounces off it in and out.
+     */
+    public static final double kSoftLimitMargin = Units.inchesToMeters(0.5);
 
     // Safety
     /** Leader/follower disagreement that trips the skew fault (Doyenne_2026 used 2 in). */
