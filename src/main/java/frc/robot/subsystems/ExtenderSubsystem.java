@@ -25,9 +25,11 @@ import frc.robot.util.diagnostics.RobotDiagnostics;
 import frc.robot.util.hardware.Sparks;
 
 /**
- * The two-motor extender ("the box"). The follower mirrors the leader in hardware (see
- * ExtenderConfigs.followConfig), so only the leader is ever commanded. The follower's encoder
- * is read only for the skew safety check.
+ * The two-motor extender ("the box"). No follower mode: each motor runs its own closed loop on its
+ * own encoder toward the same target (see ExtenderConfigs). Each side corrects itself, and if one
+ * side's CAN flickers the other keeps working. CAN 20 ("leader") is the reference for position and
+ * targets; CAN 21 ("follower" in names below, now just the second motor) is checked against it by
+ * the skew safety check.
  *
  * <p>Zero: the SPARKs' encoders start at 0 when they power on, and the rules require the robot to
  * start with the box retracted, so power-on = home. The code never re-zeroes on startup, so a
@@ -39,11 +41,12 @@ import frc.robot.util.hardware.Sparks;
  */
 @Logged(strategy = Logged.Strategy.OPT_IN)
 public class ExtenderSubsystem extends SubsystemBase {
-  private final SparkMax m_leader = Sparks.create(CanIdConstants.kExtenderMotor1, ExtenderConfigs.leaderConfig);
-  private final SparkMax m_follower = Sparks.create(CanIdConstants.kExtenderMotor2, ExtenderConfigs.followConfig);
+  private final SparkMax m_leader = Sparks.create(CanIdConstants.kExtenderMotor1, ExtenderConfigs.motor1Config);
+  private final SparkMax m_follower = Sparks.create(CanIdConstants.kExtenderMotor2, ExtenderConfigs.motor2Config);
   private final RelativeEncoder m_leaderEncoder = m_leader.getEncoder();
   private final RelativeEncoder m_followerEncoder = m_follower.getEncoder();
-  private final SparkClosedLoopController m_controller = m_leader.getClosedLoopController();
+  private final SparkClosedLoopController m_leaderController = m_leader.getClosedLoopController();
+  private final SparkClosedLoopController m_followerController = m_follower.getClosedLoopController();
 
   /** Target position in meters. Starts wherever the box is (0 on a real power-on). */
   private double m_target;
@@ -89,8 +92,10 @@ public class ExtenderSubsystem extends SubsystemBase {
       if (ExtenderConstants.kP.hasChanged() | ExtenderConstants.kI.hasChanged()
           | ExtenderConstants.kD.hasChanged() | ExtenderConstants.kV.hasChanged()
           | ExtenderConstants.kS.hasChanged()) {
-        Sparks.setGains(m_leader, ExtenderConstants.kP.get(), ExtenderConstants.kI.get(),
-            ExtenderConstants.kD.get(), ExtenderConstants.kV.get(), ExtenderConstants.kS.get());
+        for (SparkMax motor : new SparkMax[] {m_leader, m_follower}) {
+          Sparks.setGains(motor, ExtenderConstants.kP.get(), ExtenderConstants.kI.get(),
+              ExtenderConstants.kD.get(), ExtenderConstants.kV.get(), ExtenderConstants.kS.get());
+        }
       }
     }
 
@@ -116,7 +121,7 @@ public class ExtenderSubsystem extends SubsystemBase {
 
     // Only drive while the position is trusted.
     if (m_faulted || !m_isHomed) {
-      m_leader.stopMotor();
+      stopMotors();
       m_imbalanceDebouncer.calculate(false);
       return;
     }
@@ -128,7 +133,7 @@ public class ExtenderSubsystem extends SubsystemBase {
     }
     double leaderAmps = m_leader.getOutputCurrent();
     double followerAmps = m_follower.getOutputCurrent();
-    if (m_imbalanceDebouncer.calculate(Math.abs(leaderAmps - followerAmps) > GlobalConstants.kHighCurrentLimit)) {
+    if (m_imbalanceDebouncer.calculate(Math.abs(leaderAmps - followerAmps) > ExtenderConstants.kImbalanceAmps)) {
       m_imbalanceDebouncer.calculate(false);
       emergencyStop("CURRENT IMBALANCE: L:" + leaderAmps + " F:" + followerAmps, true);
       return;
@@ -148,9 +153,14 @@ public class ExtenderSubsystem extends SubsystemBase {
       m_stoppedShortDebouncer.calculate(false);
     }
 
-    // Only the leader is commanded. A setpoint sent to the follower would knock it out of
-    // follower mode and the two sides would fight.
-    m_controller.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
+    // Both sides drive to the same target, each on its own encoder.
+    m_leaderController.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
+    m_followerController.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
+  }
+
+  private void stopMotors() {
+    m_leader.stopMotor();
+    m_follower.stopMotor();
   }
 
   /**
@@ -158,7 +168,7 @@ public class ExtenderSubsystem extends SubsystemBase {
    * current trips), so "clear faults" can resume. If not (an encoder reset), it must be re-homed.
    */
   private void emergencyStop(String reason, boolean positionStillValid) {
-    m_leader.stopMotor();
+    stopMotors();
     if (!positionStillValid) {
       m_isHomed = false;
     }
@@ -266,12 +276,14 @@ public class ExtenderSubsystem extends SubsystemBase {
   public Command home() {
     return new FunctionalCommand(
         () -> {
-          // A leader that has dropped off the CAN bus can't be homed. Pressing home anyway used to
+          // A motor that has dropped off the CAN bus can't be homed. Pressing home anyway used to
           // freeze the whole robot ~0.6 s per press (Q2 at NCFAY).
-          m_homeBlocked = !Sparks.isResponding(m_leader);
+          SparkMax silent = !Sparks.isResponding(m_leader) ? m_leader
+              : !Sparks.isResponding(m_follower) ? m_follower : null;
+          m_homeBlocked = silent != null;
           if (m_homeBlocked) {
-            m_leader.stopMotor();
-            setStatus("CAN " + m_leader.getDeviceId() + " NOT RESPONDING - can't home; check its breaker/power/CAN wiring");
+            stopMotors();
+            setStatus("CAN " + silent.getDeviceId() + " NOT RESPONDING - can't home; check its breaker/power/CAN wiring");
             DriverStation.reportWarning(">>> [EXTENDER] " + m_status, false);
             return;
           }
@@ -280,20 +292,23 @@ public class ExtenderSubsystem extends SubsystemBase {
           if (!GlobalConstants.IS_BENCHTOP) {
             // Async: never stall the robot loop waiting on the SPARK.
             Sparks.applyAsync(m_leader, ExtenderConfigs.softLimitsOff);
+            Sparks.applyAsync(m_follower, ExtenderConfigs.softLimitsOff);
           }
         },
         () -> {
           if (!m_homeBlocked && !GlobalConstants.IS_BENCHTOP) {
             m_leader.setVoltage(ExtenderConstants.kHomingVoltage);
+            m_follower.setVoltage(ExtenderConstants.kHomingVoltage);
           }
         },
         interrupted -> {
-          m_leader.stopMotor();
+          stopMotors();
           if (m_homeBlocked) {
             return;
           }
           if (!GlobalConstants.IS_BENCHTOP) {
             Sparks.applyAsync(m_leader, ExtenderConfigs.softLimitsOn);
+            Sparks.applyAsync(m_follower, ExtenderConfigs.softLimitsOn);
           }
           finishHoming(!interrupted);
         },
@@ -320,7 +335,7 @@ public class ExtenderSubsystem extends SubsystemBase {
       m_faulted = false;
       setStatus("READY");
     } else {
-      m_leader.stopMotor();
+      stopMotors();
       m_isHomed = false;
       m_target = ExtenderConstants.kRetracted;
       setStatus("HOMING FAILED - press home again");

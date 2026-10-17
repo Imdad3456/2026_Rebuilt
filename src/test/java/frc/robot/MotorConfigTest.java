@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Builds the whole robot in simulation, then reads each SPARK's configuration back from the
  * controller. Proves the settings each motor depends on actually reach it (for example that the
- * extender follower still follows, and the steering motors still use their absolute encoders).
+ * extender motors run independently, and the steering motors still use their absolute encoders).
  */
 public class MotorConfigTest {
   private static Robot s_robot;
@@ -87,25 +87,27 @@ public class MotorConfigTest {
   }
 
   @Test
-  void extenderFollowerStillFollowsTheLeader() {
-    SparkBaseConfigAccessor follower = config(CanIdConstants.kExtenderMotor2);
-    assertEquals(CanIdConstants.kExtenderMotor1, follower.getFollowerModeLeaderId());
-    assertTrue(follower.getFollowerModeInverted());
-  }
-
-  @Test
-  void extenderLeaderKeepsItsSafetyLimits() {
-    SparkBaseConfigAccessor leader = config(CanIdConstants.kExtenderMotor1);
-    assertFalse(leader.getInverted());
-    assertEquals(IdleMode.kBrake, leader.getIdleMode());
-    assertEquals(ExtenderConstants.kCurrentLimit, leader.getSmartCurrentLimit());
-    assertEquals(ExtenderConstants.kCruiseVelocity, leader.closedLoop.maxMotion.getCruiseVelocity(), 1e-4);
-    assertTrue(leader.softLimit.getForwardSoftLimitEnabled());
-    assertTrue(leader.softLimit.getReverseSoftLimitEnabled());
-    assertEquals(ExtenderConstants.kExtended + ExtenderConstants.kSoftLimitMargin,
-        leader.softLimit.getForwardSoftLimit(), 1e-4);
-    assertEquals(ExtenderConstants.kRetracted - ExtenderConstants.kSoftLimitMargin,
-        leader.softLimit.getReverseSoftLimit(), 1e-4);
+  void extenderMotorsAreIndependent() {
+    // No follower mode: each motor runs its own closed loop with the same limits.
+    for (int id : new int[] {CanIdConstants.kExtenderMotor1, CanIdConstants.kExtenderMotor2}) {
+      SparkBaseConfigAccessor c = config(id);
+      assertEquals(0, c.getFollowerModeLeaderId(), "CAN " + id + " must not follow");
+      assertEquals(IdleMode.kBrake, c.getIdleMode(), "CAN " + id);
+      assertEquals(ExtenderConstants.kCurrentLimit, c.getSmartCurrentLimit(), "CAN " + id);
+      assertEquals(ExtenderConstants.kCruiseVelocity, c.closedLoop.maxMotion.getCruiseVelocity(), 1e-4, "CAN " + id);
+      assertEquals(ExtenderConstants.kPositionFactor, c.encoder.getPositionConversionFactor(), 1e-9, "CAN " + id);
+      assertTrue(c.softLimit.getForwardSoftLimitEnabled(), "CAN " + id);
+      assertTrue(c.softLimit.getReverseSoftLimitEnabled(), "CAN " + id);
+      assertEquals(ExtenderConstants.kExtended + ExtenderConstants.kSoftLimitMargin,
+          c.softLimit.getForwardSoftLimit(), 1e-4, "CAN " + id);
+      assertEquals(ExtenderConstants.kRetracted - ExtenderConstants.kSoftLimitMargin,
+          c.softLimit.getReverseSoftLimit(), 1e-4, "CAN " + id);
+    }
+    // Mounted opposite each other.
+    assertFalse(config(CanIdConstants.kExtenderMotor1).getInverted());
+    assertTrue(config(CanIdConstants.kExtenderMotor2).getInverted());
+    // Homing waits for both motors to pass this current, so it must be reachable under the limit.
+    assertTrue(ExtenderConstants.kHomingStallCurrent < ExtenderConstants.kCurrentLimit);
   }
 
   @Test

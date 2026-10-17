@@ -12,7 +12,11 @@ import frc.robot.util.TuningManager;
 public final class ExtenderConstants {
     // Hardware (declared first: the gains below are computed from it, and Java initializes
     // static fields top to bottom)
-    public static final int kCurrentLimit = GlobalConstants.kMediumCurrentLimit;
+    /**
+     * Smart current limit per motor (amps), recommended by another team. Set here, not only in REV
+     * Hardware Client: the code re-applies the full config at every boot and would overwrite it.
+     */
+    public static final int kCurrentLimit = 15;
     public static final double kGearRatio = 36.0;
     public static final double kPulleyPitchDiameterInches = 2.10;
     /** Meters of travel per motor rotation. */
@@ -86,7 +90,7 @@ public final class ExtenderConstants {
     public static final double kManualDeadband = 0.1;
 
     // Safety
-    /** Leader/follower disagreement that trips the skew fault (March 2026 tuning). */
+    /** Disagreement between the two motors' encoders that trips the skew fault (March 2026 tuning). */
     public static final double kMaxSkew = Units.inchesToMeters(1.5);
 
     /**
@@ -108,16 +112,24 @@ public final class ExtenderConstants {
     public static final double kStallMinOutput = 0.03;
 
     /**
-     * The two motors' currents must differ by more than kHighCurrentLimit for this long before the
+     * The two motors' currents must differ by more than kImbalanceAmps for this long before the
      * imbalance trip fires. A single sample tripped it 0.2 s into auto in Q2 at NCFAY (leader
      * 60.7 A, follower 0 A), killing the box for the whole match; a startup surge is shorter.
      */
     public static final double kImbalanceSeconds = 0.3;
+    /**
+     * Current difference (amps) that counts as an imbalance. Was 60 A (kHighCurrentLimit), which
+     * can't happen with a 15 A limit: one side stalled at the limit while the other draws nothing.
+     */
+    public static final double kImbalanceAmps = 12.0;
 
     // Homing: drive gently into the retracted hard stop until both motors stall.
     public static final double kHomingVoltage = -2.4; // about 20% output
-    /** Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. */
-    public static final double kHomingStallCurrent = 15.0;
+    /**
+     * Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. Must stay
+     * below kCurrentLimit: the limit caps the current, so a threshold at the limit is never reached.
+     */
+    public static final double kHomingStallCurrent = 10.0;
     public static final double kHomingStallSeconds = 0.1;
     public static final double kHomingTimeoutSeconds = 3.0;
 
