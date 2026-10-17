@@ -53,7 +53,11 @@ public final class ExtenderConstants {
 
     // Positions
     public static final double kRetracted = 0.0;
-    public static final double kExtended = Units.inchesToMeters(12.0);
+    /**
+     * Fully out. Measured physical travel from the start position is 11 3/4 in (Oct 2026); stop
+     * 1/4 in short of the hard stop so the box reaches its target instead of pushing into the stop.
+     */
+    public static final double kExtended = Units.inchesToMeters(11.5);
     /**
      * Soft limits sit this far beyond the in/out targets. With the limit exactly on the target, any
      * tiny overshoot hits the limit, cuts the output, and the box bounces off it in and out.

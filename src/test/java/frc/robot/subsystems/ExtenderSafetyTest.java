@@ -11,6 +11,7 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.simulation.DriverStationSim;
 import edu.wpi.first.wpilibj.simulation.SimHooks;
 import frc.robot.constants.CanIdConstants;
+import frc.robot.constants.ExtenderConstants;
 import frc.robot.util.hardware.Sparks;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -192,22 +193,24 @@ public class ExtenderSafetyTest {
   @Test
   void stopsPushingWhenTheBoxCantReachTheTarget() {
     var scheduler = edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance();
-    scheduler.schedule(m_extender.extend()); // target: fully out (12 in)
+    scheduler.schedule(m_extender.extend()); // target: fully out
     scheduler.run();
-    // The box reaches its real hard stop 0.5 in short of the target and stops there.
-    moveTo(Units.inchesToMeters(11.5));
+    // The box hits something 0.5 in short of the target and stops there.
+    double out = Units.metersToInches(ExtenderConstants.kExtended);
+    double stop = out - 0.5;
+    moveTo(Units.inchesToMeters(stop));
     m_leaderEncoder.setVelocity(0);
     m_leaderSim.setAppliedOutput(0.1); // still pushing
 
     for (int i = 0; i < 10; i++) {   // 0.2 s: a brief pause is fine
-      loop(Units.inchesToMeters(11.5));
+      loop(Units.inchesToMeters(stop));
     }
-    assertEquals(12.0, m_extender.getTargetInches(), 1e-6, "don't give up on a brief pause");
+    assertEquals(out, m_extender.getTargetInches(), 1e-6, "don't give up on a brief pause");
 
-    for (int i = 0; i < 30; i++) {   // 0.6 s more: clearly stalled against the stop
-      loop(Units.inchesToMeters(11.5));
+    for (int i = 0; i < 30; i++) {   // 0.6 s more: clearly stalled
+      loop(Units.inchesToMeters(stop));
     }
-    assertEquals(11.5, m_extender.getTargetInches(), 0.05, "accept where it stopped; stop pushing");
+    assertEquals(stop, m_extender.getTargetInches(), 0.05, "accept where it stopped; stop pushing");
     assertFalse(m_extender.isFaulted(), "stopping short isn't a fault");
   }
 
@@ -222,14 +225,14 @@ public class ExtenderSafetyTest {
     for (int i = 0; i < 40; i++) {
       loop(Units.inchesToMeters(6));
     }
-    assertEquals(12.0, m_extender.getTargetInches(), 1e-6);
+    assertEquals(Units.metersToInches(ExtenderConstants.kExtended), m_extender.getTargetInches(), 1e-6);
     // Not moving but not pushing either (e.g. disabled): nothing to protect.
     m_leaderEncoder.setVelocity(0);
     m_leaderSim.setAppliedOutput(0);
     for (int i = 0; i < 40; i++) {
       loop(Units.inchesToMeters(6));
     }
-    assertEquals(12.0, m_extender.getTargetInches(), 1e-6);
+    assertEquals(Units.metersToInches(ExtenderConstants.kExtended), m_extender.getTargetInches(), 1e-6);
   }
 
   @Test
