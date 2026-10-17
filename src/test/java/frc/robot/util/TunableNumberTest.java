@@ -32,6 +32,15 @@ public class TunableNumberTest {
   }
 
   @Test
+  void defaultIsVisibleOnTheDashboard() {
+    new TunableNumber("Test/Visible", 4.2);
+    // What a dashboard sees: the published value, not just a topic with nothing in it.
+    var sub = NetworkTableInstance.getDefault().getDoubleTopic("Tuning/Test/Visible").subscribe(-1.0);
+    assertEquals(4.2, sub.get(), 1e-9);
+    sub.close();
+  }
+
+  @Test
   void reportsChangesOffTheField() {
     TunableNumber number = new TunableNumber("Test/OffField", 1.0);
     setFms(false);

@@ -13,6 +13,10 @@ public class TunableNumber {
         this.entry = NetworkTableInstance.getDefault()
             .getDoubleTopic("Tuning/" + path)
             .getEntry(defaultValue, PubSubOption.periodic(0.02));
+        // Publish the default so the dashboard shows the current value. Without this the entry has
+        // no value until someone types one, so you can't see what you're tuning from. Keeps an
+        // existing value (e.g. one a dashboard set) instead of overwriting it.
+        this.entry.setDefault(defaultValue);
         this.lastValue = defaultValue;
     }
 
