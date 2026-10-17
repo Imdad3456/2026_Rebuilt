@@ -33,8 +33,10 @@ deploy {
                 frcStaticFileDeploy(getArtifactTypeClass('FileTreeArtifact')) {
                     files = project.fileTree('src/main/deploy')
                     directory = '/home/lvuser/deploy'
-                    deleteOldFiles = false // Change to true to delete files on roboRIO that no
-                                           // longer exist in deploy directory of this project
+                    // Delete files on the roboRIO that no longer exist in src/main/deploy. With
+                    // false, stale March .auto files stayed on the robot and failed to load at
+                    // every boot (unregistered autoLaunchWithExtend/autoIdle, null.path).
+                    deleteOldFiles = true
                 }
             }
         }

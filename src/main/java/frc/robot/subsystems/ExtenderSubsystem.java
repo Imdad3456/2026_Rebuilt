@@ -60,6 +60,10 @@ public class ExtenderSubsystem extends SubsystemBase {
   private final Debouncer m_stoppedShortDebouncer = new Debouncer(ExtenderConstants.kStallSeconds);
   /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
   private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
+  /** The motors' currents must disagree for a while before it counts (ignores startup surges). */
+  private final Debouncer m_imbalanceDebouncer = new Debouncer(ExtenderConstants.kImbalanceSeconds);
+  /** Homing refused because the leader SPARK isn't on the CAN bus. */
+  private boolean m_homeBlocked = false;
   /** The power-on position counts as home (the robot must start with the box retracted). */
   private boolean m_isHomed = true;
   /** Latched after a skew/current safety trip. The extender isn't driven until re-homed. */
@@ -113,6 +117,7 @@ public class ExtenderSubsystem extends SubsystemBase {
     // Only drive while the position is trusted.
     if (m_faulted || !m_isHomed) {
       m_leader.stopMotor();
+      m_imbalanceDebouncer.calculate(false);
       return;
     }
 
@@ -123,7 +128,8 @@ public class ExtenderSubsystem extends SubsystemBase {
     }
     double leaderAmps = m_leader.getOutputCurrent();
     double followerAmps = m_follower.getOutputCurrent();
-    if (Math.abs(leaderAmps - followerAmps) > GlobalConstants.kHighCurrentLimit) {
+    if (m_imbalanceDebouncer.calculate(Math.abs(leaderAmps - followerAmps) > GlobalConstants.kHighCurrentLimit)) {
+      m_imbalanceDebouncer.calculate(false);
       emergencyStop("CURRENT IMBALANCE: L:" + leaderAmps + " F:" + followerAmps, true);
       return;
     }
@@ -260,25 +266,38 @@ public class ExtenderSubsystem extends SubsystemBase {
   public Command home() {
     return new FunctionalCommand(
         () -> {
+          // A leader that has dropped off the CAN bus can't be homed. Pressing home anyway used to
+          // freeze the whole robot ~0.6 s per press (Q2 at NCFAY).
+          m_homeBlocked = !Sparks.isResponding(m_leader);
+          if (m_homeBlocked) {
+            m_leader.stopMotor();
+            setStatus("CAN " + m_leader.getDeviceId() + " NOT RESPONDING - can't home; check its breaker/power/CAN wiring");
+            DriverStation.reportWarning(">>> [EXTENDER] " + m_status, false);
+            return;
+          }
           m_homing = true;
           m_stallDebouncer.calculate(false);
           if (!GlobalConstants.IS_BENCHTOP) {
-            Sparks.apply(m_leader, ExtenderConfigs.softLimitsOff, "soft limits off for homing");
+            // Async: never stall the robot loop waiting on the SPARK.
+            Sparks.applyAsync(m_leader, ExtenderConfigs.softLimitsOff);
           }
         },
         () -> {
-          if (!GlobalConstants.IS_BENCHTOP) {
+          if (!m_homeBlocked && !GlobalConstants.IS_BENCHTOP) {
             m_leader.setVoltage(ExtenderConstants.kHomingVoltage);
           }
         },
         interrupted -> {
           m_leader.stopMotor();
+          if (m_homeBlocked) {
+            return;
+          }
           if (!GlobalConstants.IS_BENCHTOP) {
-            Sparks.apply(m_leader, ExtenderConfigs.softLimitsOn, "soft limits back on");
+            Sparks.applyAsync(m_leader, ExtenderConfigs.softLimitsOn);
           }
           finishHoming(!interrupted);
         },
-        () -> GlobalConstants.IS_BENCHTOP || isAtHome(),
+        () -> m_homeBlocked || GlobalConstants.IS_BENCHTOP || isAtHome(),
         this)
         .withTimeout(ExtenderConstants.kHomingTimeoutSeconds)
         .withName("HomeExtender");

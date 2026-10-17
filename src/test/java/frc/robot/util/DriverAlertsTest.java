@@ -109,6 +109,6 @@ public class DriverAlertsTest {
   }
 
   private static com.revrobotics.spark.SparkMax spark(int id) {
-    return Sparks.all().stream().filter(s -> s.getDeviceId() == id).findFirst().orElseThrow();
+    return (com.revrobotics.spark.SparkMax) Sparks.all().stream().filter(s -> s.getDeviceId() == id).findFirst().orElseThrow();
   }
 }

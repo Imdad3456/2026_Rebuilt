@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Timeout;
 /** The default auto: box out, shoot the preload, stop. No driving. */
 public class ExtendAndShootAutoTest {
   private static SparkMax spark(int id) {
-    return Sparks.all().stream().filter(s -> s.getDeviceId() == id).findFirst().orElseThrow();
+    return (SparkMax) Sparks.all().stream().filter(s -> s.getDeviceId() == id).findFirst().orElseThrow();
   }
 
   private static void loops(Robot robot, int n) {

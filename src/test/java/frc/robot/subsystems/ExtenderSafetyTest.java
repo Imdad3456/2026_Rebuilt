@@ -41,6 +41,7 @@ public class ExtenderSafetyTest {
           edu.wpi.first.math.system.plant.DCMotor.getNEO(1));
     }
     m_leaderSim.setAppliedOutput(0); // not pushing unless a test says so
+    m_leaderSim.setMotorCurrent(0);
     m_leaderEncoder.setVelocity(0);
     // Start every test retracted, homed and fault-free.
     m_leaderEncoder.setPosition(0);
@@ -57,7 +58,7 @@ public class ExtenderSafetyTest {
   }
 
   private static SparkMax spark(int canId) {
-    return Sparks.all().stream().filter(s -> s.getDeviceId() == canId).findFirst().orElseThrow();
+    return (SparkMax) Sparks.all().stream().filter(s -> s.getDeviceId() == canId).findFirst().orElseThrow();
   }
 
   /** Advance one 20 ms loop with both sides at the given position. */
@@ -188,6 +189,27 @@ public class ExtenderSafetyTest {
     moveTo(Units.inchesToMeters(10));
     loop(0.0);
     assertTrue(m_extender.isFaulted(), "a genuine reset is still detected");
+  }
+
+  @Test
+  void briefCurrentImbalanceDoesNotTrip() {
+    // Q2 at NCFAY: one sample of leader 60.7 A / follower 0 A, 0.2 s into auto, latched the
+    // extender off for the whole match. A startup surge must not trip it.
+    m_leaderSim.setMotorCurrent(70);
+    for (int i = 0; i < 5; i++) {   // 0.1 s
+      loop(0.0);
+    }
+    m_leaderSim.setMotorCurrent(0);
+    loop(0.0);
+    assertFalse(m_extender.isFaulted(), "a 0.1 s surge is not an imbalance");
+
+    // Sustained, it still trips.
+    m_leaderSim.setMotorCurrent(70);
+    for (int i = 0; i < 25; i++) {  // 0.5 s
+      loop(0.0);
+    }
+    assertTrue(m_extender.isFaulted(), "a sustained imbalance must still trip");
+    assertTrue(m_extender.isHomed(), "an imbalance doesn't make the encoders untrustworthy");
   }
 
   @Test

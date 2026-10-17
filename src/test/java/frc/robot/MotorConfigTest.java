@@ -3,10 +3,11 @@ package frc.robot;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.revrobotics.spark.FeedbackSensor;
-import com.revrobotics.spark.SparkMax;
+import com.revrobotics.spark.SparkBase;
+import com.revrobotics.spark.SparkFlex;
 import com.revrobotics.spark.config.LimitSwitchConfig.Behavior;
 import com.revrobotics.spark.config.SparkBaseConfig.IdleMode;
-import com.revrobotics.spark.config.SparkMaxConfigAccessor;
+import com.revrobotics.spark.config.SparkBaseConfigAccessor;
 
 import edu.wpi.first.hal.HAL;
 import frc.robot.constants.CanIdConstants;
@@ -37,17 +38,20 @@ public class MotorConfigTest {
     s_robot.close();
   }
 
-  private static SparkMaxConfigAccessor config(int canId) {
-    SparkMax spark = Sparks.all().stream().filter(s -> s.getDeviceId() == canId).findFirst()
+  private static SparkBase spark(int canId) {
+    return Sparks.all().stream().filter(s -> s.getDeviceId() == canId).findFirst()
         .orElseThrow(() -> new AssertionError("no SPARK created for CAN " + canId));
-    return spark.configAccessor;
+  }
+
+  private static SparkBaseConfigAccessor config(int canId) {
+    return Sparks.configAccessor(spark(canId));
   }
 
   @Test
   void everySparkIgnoresLimitInputs() {
     assertFalse(Sparks.all().isEmpty());
-    for (SparkMax spark : Sparks.all()) {
-      var limits = spark.configAccessor.limitSwitch;
+    for (SparkBase spark : Sparks.all()) {
+      var limits = Sparks.configAccessor(spark).limitSwitch;
       assertEquals(Behavior.kKeepMovingMotor, limits.getForwardLimitSwitchTriggerBehavior(), "CAN " + spark.getDeviceId());
       assertEquals(Behavior.kKeepMovingMotor, limits.getReverseLimitSwitchTriggerBehavior(), "CAN " + spark.getDeviceId());
     }
@@ -57,7 +61,7 @@ public class MotorConfigTest {
   void steeringMotorsUseTheAbsoluteEncoder() {
     for (int id : new int[] {CanIdConstants.kFrontLeftTurningCanId, CanIdConstants.kFrontRightTurningCanId,
         CanIdConstants.kRearLeftTurningCanId, CanIdConstants.kRearRightTurningCanId}) {
-      SparkMaxConfigAccessor c = config(id);
+      SparkBaseConfigAccessor c = config(id);
       assertEquals(FeedbackSensor.kAbsoluteEncoder, c.closedLoop.getFeedbackSensor(), "CAN " + id);
       assertTrue(c.absoluteEncoder.getInverted(), "CAN " + id);
       assertEquals(2 * Math.PI, c.absoluteEncoder.getPositionConversionFactor(), 1e-4, "CAN " + id);
@@ -72,7 +76,7 @@ public class MotorConfigTest {
   void driveMotorsHaveFeedforwardAndLimits() {
     for (int id : new int[] {CanIdConstants.kFrontLeftDrivingCanId, CanIdConstants.kFrontRightDrivingCanId,
         CanIdConstants.kRearLeftDrivingCanId, CanIdConstants.kRearRightDrivingCanId}) {
-      SparkMaxConfigAccessor c = config(id);
+      SparkBaseConfigAccessor c = config(id);
       assertEquals(FeedbackSensor.kPrimaryEncoder, c.closedLoop.getFeedbackSensor(), "CAN " + id);
       assertEquals(NeoSwerveModuleConstants.kDriveEncoderPositionFactor, c.encoder.getPositionConversionFactor(), 1e-6,
           "CAN " + id);
@@ -84,14 +88,14 @@ public class MotorConfigTest {
 
   @Test
   void extenderFollowerStillFollowsTheLeader() {
-    SparkMaxConfigAccessor follower = config(CanIdConstants.kExtenderMotor2);
+    SparkBaseConfigAccessor follower = config(CanIdConstants.kExtenderMotor2);
     assertEquals(CanIdConstants.kExtenderMotor1, follower.getFollowerModeLeaderId());
     assertTrue(follower.getFollowerModeInverted());
   }
 
   @Test
   void extenderLeaderKeepsItsSafetyLimits() {
-    SparkMaxConfigAccessor leader = config(CanIdConstants.kExtenderMotor1);
+    SparkBaseConfigAccessor leader = config(CanIdConstants.kExtenderMotor1);
     assertFalse(leader.getInverted());
     assertEquals(IdleMode.kBrake, leader.getIdleMode());
     assertEquals(ExtenderConstants.kCurrentLimit, leader.getSmartCurrentLimit());
@@ -102,6 +106,12 @@ public class MotorConfigTest {
         leader.softLimit.getForwardSoftLimit(), 1e-4);
     assertEquals(ExtenderConstants.kRetracted - ExtenderConstants.kSoftLimitMargin,
         leader.softLimit.getReverseSoftLimit(), 1e-4);
+  }
+
+  @Test
+  void intakeIsASparkFlex() {
+    // CAN 10 is a SPARK Flex; driving it as a SPARK MAX logged "not a SPARK MAX" at every boot.
+    assertInstanceOf(SparkFlex.class, spark(CanIdConstants.kIntakeMotor));
   }
 
   @Test

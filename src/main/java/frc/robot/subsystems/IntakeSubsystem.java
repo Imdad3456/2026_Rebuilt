@@ -6,7 +6,7 @@ package frc.robot.subsystems;
 
 import java.util.function.DoubleSupplier;
 
-import com.revrobotics.spark.SparkMax;
+import com.revrobotics.spark.SparkFlex;
 
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -18,7 +18,7 @@ import frc.robot.util.hardware.Sparks;
 /** Front pickup rollers that pull game pieces into the robot. */
 @Logged(strategy = Logged.Strategy.OPT_IN)
 public class IntakeSubsystem extends SubsystemBase {
-  private final SparkMax m_motor = Sparks.create(CanIdConstants.kIntakeMotor, IntakeConfigs.config);
+  private final SparkFlex m_motor = Sparks.createFlex(CanIdConstants.kIntakeMotor, IntakeConfigs.config);
 
   /** Run inward while held, at a speed (0..1) read every loop (the operator's intake slider). */
   public Command receive(DoubleSupplier speed) {

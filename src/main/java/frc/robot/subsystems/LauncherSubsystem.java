@@ -18,12 +18,14 @@ import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.Current;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.configs.LauncherConfigs;
 import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.LauncherConstants;
+import frc.robot.util.diagnostics.RobotDiagnostics;
 import frc.robot.util.hardware.Talons;
 
 /**
@@ -45,6 +47,10 @@ public class LauncherSubsystem extends SubsystemBase {
    */
   private final Debouncer m_readyDebouncer = new Debouncer(LauncherConstants.kReadySettleSeconds, Debouncer.DebounceType.kRising);
   private boolean m_readyToFeed = false;
+  /** When the current shot started (NaN when not shooting). */
+  private double m_shotStartTime = Double.NaN;
+  /** The current shot is feeding below target because the flywheel couldn't get there. */
+  private boolean m_usingFallback = false;
 
   /** RPM requested by an active shot, or 0 when not shooting. */
   private double m_shotRPM = 0.0;
@@ -54,6 +60,7 @@ public class LauncherSubsystem extends SubsystemBase {
     // Only send the signals we use, at the rate we need, and turn the rest off (less CAN traffic).
     BaseStatusSignal.setUpdateFrequencyForAll(50, m_velocity, m_supplyCurrent);
     BaseStatusSignal.setUpdateFrequencyForAll(4, m_motor.getFaultField(), m_motor.getStickyFault_BootDuringEnable());
+    Talons.streamFaultSignals(m_motor, 4);
     m_motor.optimizeBusUtilization();
   }
 
@@ -72,7 +79,15 @@ public class LauncherSubsystem extends SubsystemBase {
       }
     }
 
-    m_readyToFeed = m_readyDebouncer.calculate(atSpeed());
+    boolean atSpeed = m_readyDebouncer.calculate(atSpeed());
+    boolean fallback = !atSpeed && canFeedBelowTarget(Timer.getFPGATimestamp());
+    if (fallback && !m_usingFallback) {
+      RobotDiagnostics.logEvent(String.format(
+          "LAUNCHER can't reach %.0f RPM (at %.0f) - feeding anyway; lower the shooter slider or check the battery",
+          m_shotRPM, getActualRPM()));
+    }
+    m_usingFallback = fallback;
+    m_readyToFeed = atSpeed || fallback;
 
     double target = getTargetRPM();
     if (target > 0) {
@@ -86,9 +101,28 @@ public class LauncherSubsystem extends SubsystemBase {
     SmartDashboard.putNumber("Launcher/Target RPM", target);
   }
 
+  /**
+   * A shot that has been spinning up for {@link LauncherConstants#kSpinUpTimeoutSeconds} without
+   * reaching the target may feed once it's at {@link LauncherConstants#kFallbackFraction} of it.
+   */
+  private boolean canFeedBelowTarget(double now) {
+    return m_shotRPM > LauncherConstants.kIdleRPM.get()
+        && !Double.isNaN(m_shotStartTime)
+        && now - m_shotStartTime >= LauncherConstants.kSpinUpTimeoutSeconds
+        && getActualRPM() >= LauncherConstants.kFallbackFraction * m_shotRPM;
+  }
+
   /** Spin to an RPM read every loop (the operator's shooter slider). Back to idle/off when released. */
   public Command spinUp(DoubleSupplier rpm) {
-    return runEnd(() -> m_shotRPM = rpm.getAsDouble(), () -> m_shotRPM = 0.0).withName("LauncherOn");
+    return runEnd(() -> {
+      if (Double.isNaN(m_shotStartTime)) {
+        m_shotStartTime = Timer.getFPGATimestamp();
+      }
+      m_shotRPM = rpm.getAsDouble();
+    }, () -> {
+      m_shotRPM = 0.0;
+      m_shotStartTime = Double.NaN;
+    }).withName("LauncherOn");
   }
 
   /** Hold idle speed whenever not shooting, until turned off. */
@@ -101,6 +135,7 @@ public class LauncherSubsystem extends SubsystemBase {
     return runOnce(() -> {
       m_idleEnabled = false;
       m_shotRPM = 0.0;
+      m_shotStartTime = Double.NaN;
     }).withName("LauncherOff");
   }
 

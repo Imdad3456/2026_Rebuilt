@@ -15,6 +15,13 @@ public final class LauncherConstants {
     public static final TunableNumber kToleranceRPM = TuningManager.register("Launcher/ToleranceRPM", 180);
     /** How long the flywheel must stay at speed before (re)starting the feeder. */
     public static final double kReadySettleSeconds = 0.1;
+    /**
+     * If a shot hasn't reached the target (within tolerance) after this long, feed anyway once it's
+     * at least kFallbackFraction of the target. With a sagging battery the flywheel can't always
+     * reach the top of the slider range (4500 RPM needs ~9 V), and the feeder used to wait forever.
+     */
+    public static final double kSpinUpTimeoutSeconds = 1.0;
+    public static final double kFallbackFraction = 0.85;
     /** Shooter slider all the way down. */
     public static final TunableNumber kMinShotRPM = TuningManager.register("Launcher/MinShotRPM", 2700);
     /** Shooter slider all the way up. */

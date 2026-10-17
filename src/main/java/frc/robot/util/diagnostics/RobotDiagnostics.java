@@ -8,7 +8,7 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import com.revrobotics.REVLibError;
 import com.revrobotics.spark.SparkBase.Faults;
 import com.revrobotics.spark.SparkBase.Warnings;
-import com.revrobotics.spark.SparkMax;
+import com.revrobotics.spark.SparkBase;
 
 import edu.wpi.first.hal.can.CANStatus;
 import edu.wpi.first.util.datalog.BooleanLogEntry;
@@ -55,6 +55,10 @@ public final class RobotDiagnostics {
   private static final double kOverrunSeconds = 0.025;
   private static final int kPowerEveryNLoops = 5; // 10 Hz
   private static final int kSlowEveryNLoops = 25; // 2 Hz
+  /** Outputs off while still enabled this many loops (100 ms) before it's reported. */
+  private static final int kOutputsOffLoops = 5;
+  /** A SPARK silent this many checks in a row (~0.8 s, one SPARK checked per loop) is gone. */
+  private static final int kSilentChecks = 3;
   /** FPGA uptime below this at program start means the roboRIO itself rebooted. */
   private static final double kFreshBootSeconds = 90.0;
 
@@ -101,7 +105,7 @@ public final class RobotDiagnostics {
   private final DoubleLogEntry m_driveSpeedScale;
 
   // Motors (one SPARK checked per loop, round robin)
-  private final List<SparkMax> m_motors;
+  private final List<SparkBase> m_motors;
   private final IntegerLogEntry[] m_motorFaults;
   private final IntegerLogEntry[] m_motorWarnings;
   private final StringLogEntry[] m_motorLastError;
@@ -112,6 +116,10 @@ public final class RobotDiagnostics {
   private final int[] m_prevWarningBits;
   private int m_nextMotor = 0;
   private final boolean[] m_sparkOk;
+  /** Last known on-the-bus state per SPARK, so dropping off / coming back is reported once. */
+  private final boolean[] m_sparkResponding;
+  /** Consecutive checks a SPARK has been silent (one stale frame shouldn't count). */
+  private final int[] m_sparkSilentChecks;
 
   // TalonFX (launcher)
   private final List<TalonFX> m_talons;
@@ -128,6 +136,8 @@ public final class RobotDiagnostics {
   private boolean m_prevDsAttached = false;
   private boolean m_prevBrownedOut = false;
   private boolean m_prevSysActive = false;
+  /** Consecutive loops with outputs off while the DS still says enabled. */
+  private int m_outputsOffWhileEnabledLoops = 0;
   private int m_prevCommsDisableCount;
   private int m_prevBusOffCount;
   private final boolean[] m_prevJoyConnected = new boolean[kJoystickPorts.length];
@@ -200,6 +210,9 @@ public final class RobotDiagnostics {
 
     m_sparkOk = new boolean[n];
     java.util.Arrays.fill(m_sparkOk, true);
+    m_sparkResponding = new boolean[n];
+    java.util.Arrays.fill(m_sparkResponding, true);
+    m_sparkSilentChecks = new int[n];
 
     m_talons = List.copyOf(Talons.all());
     int t = m_talons.size();
@@ -365,9 +378,16 @@ public final class RobotDiagnostics {
       event("COMMS DISABLE: outputs disabled by lost DS packets (count " + commsDisables + ")", true);
       m_prevCommsDisableCount = commsDisables;
     }
-    // Outputs dropping while we still think we're enabled = brownout/comms/e-stop.
-    if (m_prevSysActive && !sysActive && enabled) {
-      event("OUTPUTS DISABLED WHILE ENABLED (brownout, comms loss, or e-stop)", true);
+    // Outputs off while the DS still says enabled = brownout/comms/e-stop. On a normal disable the
+    // outputs go off a loop or two before isEnabled() catches up, which used to trigger this every
+    // time, so it must persist for kOutputsOffLoops first.
+    if (!sysActive && enabled) {
+      m_outputsOffWhileEnabledLoops++;
+      if (m_outputsOffWhileEnabledLoops == kOutputsOffLoops) {
+        event("OUTPUTS DISABLED WHILE ENABLED (brownout, comms loss, or e-stop)", true);
+      }
+    } else {
+      m_outputsOffWhileEnabledLoops = 0;
     }
     m_prevSysActive = sysActive;
   }
@@ -426,7 +446,23 @@ public final class RobotDiagnostics {
     int i = m_nextMotor;
     m_nextMotor = (m_nextMotor + 1) % m_motors.size();
 
-    SparkMax spark = m_motors.get(i);
+    SparkBase spark = m_motors.get(i);
+    // A SPARK that has dropped off the bus returns garbage fault words. Decoding them reported
+    // every fault there is, ~once a second, 98 times in Q2 at NCFAY (CAN 20). Report it once.
+    m_sparkSilentChecks[i] = Sparks.isResponding(spark) ? 0 : m_sparkSilentChecks[i] + 1;
+    boolean responding = m_sparkSilentChecks[i] < kSilentChecks;
+    if (responding != m_sparkResponding[i]) {
+      event("SPARK CAN " + spark.getDeviceId() + (responding
+          ? " RESPONDING AGAIN"
+          : " NOT RESPONDING - lost power (breaker/wiring) or CAN connection"), !responding);
+      m_sparkResponding[i] = responding;
+    }
+    m_motorLastError[i].update(spark.getLastError().toString());
+    if (!responding) {
+      m_sparkOk[i] = false;
+      return;
+    }
+
     Faults faults = spark.getFaults();
     Warnings warnings = spark.getWarnings();
     REVLibError lastError = spark.getLastError();
@@ -444,7 +480,6 @@ public final class RobotDiagnostics {
 
     m_motorFaults[i].update(faults.rawBits);
     m_motorWarnings[i].update(warnings.rawBits);
-    m_motorLastError[i].update(lastError.toString());
 
     int newFaults = faults.rawBits & ~m_prevFaultBits[i];
     int newWarnings = warnings.rawBits & ~m_prevWarningBits[i];
@@ -477,8 +512,8 @@ public final class RobotDiagnostics {
       }
       int newFaults = faultBits & ~m_prevTalonFaultBits[i];
       if (newFaults != 0) {
-        event(String.format("TalonFX CAN %d: new fault bits 0x%X (see Phoenix Tuner for names)",
-            talon.getDeviceID(), newFaults), true);
+        event(String.format("TalonFX CAN %d: new fault bits 0x%X; active now: %s",
+            talon.getDeviceID(), newFaults, Talons.activeFaultNames(talon)), true);
       }
       m_prevTalonFaultBits[i] = faultBits;
       m_talonOk[i] = connected && faultBits == 0;

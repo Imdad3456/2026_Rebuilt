@@ -17,17 +17,20 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
+import edu.wpi.first.math.util.Units;
 import frc.robot.commands.Autos;
 import frc.robot.commands.DriveCommand;
 import frc.robot.constants.AutoConstants;
 import frc.robot.constants.IntakeConstants;
 import frc.robot.constants.OIConstants;
+import frc.robot.constants.ExtenderConstants;
 import frc.robot.subsystems.DriveSubsystem;
 import frc.robot.subsystems.ExtenderSubsystem;
 import frc.robot.subsystems.FeederSubsystem;
 import frc.robot.subsystems.IntakeSubsystem;
 import frc.robot.subsystems.LauncherSubsystem;
 import frc.robot.util.DriverAlerts;
+import frc.robot.util.diagnostics.RobotDiagnostics;
 
 /** Creates the subsystems and connects the controllers to them. */
 @Logged(strategy = Logged.Strategy.OPT_IN)
@@ -139,16 +142,34 @@ public class RobotContainer {
    * The default auto: no driving. Extend the box while the flywheel spins up, then shoot the
    * preloaded balls (feeding only while at speed, box shaking at the launch position), then stop
    * with the box out, ready to intake in teleop.
+   *
+   * <p>Never shoots with the box in: the balls jam. If the box's safety trips on the way out (Q2
+   * and Q8 at NCFAY; homing fixed it both times), it re-homes and goes out again first. If it still
+   * isn't out, the auto only spins the flywheel and does not feed.
    */
   private Command extendAndShoot() {
+    Command waitForBox = Commands.waitUntil(() -> m_extender.isAtTarget() || m_extender.isFaulted())
+        .withTimeout(AutoConstants.kExtendWaitSeconds);
+    Command recoverBox = m_extender.home().andThen(m_extender.extend())
+        .andThen(Commands.waitUntil(m_extender::isAtTarget).withTimeout(AutoConstants.kExtendWaitSeconds));
+    Command shoot = m_feeder.feedWhile(m_launcher::isReadyToFeed).alongWith(shakeWhenReady())
+        .withTimeout(AutoConstants.kPreloadShootSeconds);
     return Commands.deadline(
         Commands.sequence(
             m_extender.extend(),
-            Commands.waitUntil(m_extender::isAtTarget).withTimeout(AutoConstants.kExtendWaitSeconds),
-            m_feeder.feedWhile(m_launcher::isReadyToFeed).alongWith(shakeWhenReady())
-                .withTimeout(AutoConstants.kPreloadShootSeconds)),
+            waitForBox,
+            Commands.either(recoverBox, Commands.none(), () -> m_extender.isFaulted() || !m_extender.isHomed()),
+            Commands.either(shoot,
+                Commands.runOnce(() -> RobotDiagnostics.logEvent("AUTO: box not out - not shooting (balls would jam)")),
+                this::isBoxOutForShooting)),
         m_launcher.spinUp(AutoConstants.kAutoShotRPM::get))
         .withName("Extend and Shoot");
+  }
+
+  /** The box is far enough out to shoot without jamming (the shake's inner end or beyond). */
+  private boolean isBoxOutForShooting() {
+    return !m_extender.isFaulted() && m_extender.isHomed()
+        && m_extender.getPositionInches() >= Units.metersToInches(ExtenderConstants.kAgitateMinPosition) - 0.25;
   }
 
   /**

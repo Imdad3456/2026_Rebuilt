@@ -107,6 +107,13 @@ public final class ExtenderConstants {
     /** More than this motor output (fraction, ~0.3 V) counts as pushing. */
     public static final double kStallMinOutput = 0.03;
 
+    /**
+     * The two motors' currents must differ by more than kHighCurrentLimit for this long before the
+     * imbalance trip fires. A single sample tripped it 0.2 s into auto in Q2 at NCFAY (leader
+     * 60.7 A, follower 0 A), killing the box for the whole match; a startup surge is shorter.
+     */
+    public static final double kImbalanceSeconds = 0.3;
+
     // Homing: drive gently into the retracted hard stop until both motors stall.
     public static final double kHomingVoltage = -2.4; // about 20% output
     /** Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. */
