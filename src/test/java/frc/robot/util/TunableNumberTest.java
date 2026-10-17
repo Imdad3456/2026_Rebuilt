@@ -41,6 +41,19 @@ public class TunableNumberTest {
   }
 
   @Test
+  void dashboardValueIgnoredOnFms() {
+    TunableNumber number = new TunableNumber("Test/MatchSafe", 2700);
+    try (DoublePublisher pub = NetworkTableInstance.getDefault()
+        .getDoubleTopic("Tuning/Test/MatchSafe").publish()) {
+      pub.set(45000); // a typo on the dashboard
+      setFms(false);
+      assertEquals(45000, number.get(), 1e-9, "pits/practice: dashboard edits apply");
+      setFms(true);
+      assertEquals(2700, number.get(), 1e-9, "match: always the value from the code");
+    }
+  }
+
+  @Test
   void reportsChangesOffTheField() {
     TunableNumber number = new TunableNumber("Test/OffField", 1.0);
     setFms(false);

@@ -42,11 +42,10 @@ The current code has no such gating; health is displayed only.
 SPARK can't drive its motor, so the red can't be motor output. REV's only red-and-white pattern is
 Red/White = "reverse limit switch pressed"; cyan (brake, disabled) looks blue. On MAXSwerve modules
 the steering encoder shares the SPARK data port with the limit-switch inputs, so a noisy limit
-input is plausible, and while it reads pressed it can stop that motor turning in one direction.
-No mechanism here uses limit switches, so every SPARK is now configured to ignore them, and each
-SPARK's limit readings are logged (`/Diag/Motors/CANxx/ForwardLimitPressed`,
-`ReverseLimitPressed`, plus a `/Diag/Events` entry). If they read pressed, check the data-port
-wiring on that module. Unconfirmed until the robot logs show it.
+reading is plausible. It would NOT stop the motor: REV's default ignores the limit inputs (checked
+with `MotorConfigTest`), so it's probably harmless noise rather than a cause of the failure. Each
+SPARK's limit readings are now logged (`/Diag/Motors/CANxx/ForwardLimitPressed`,
+`ReverseLimitPressed`, plus a `/Diag/Events` entry) to confirm what the LED shows. Unconfirmed.
 
 **Robot changes since:** there is no Limelight and no navX anymore. Driving is robot-relative only,
 odometry heading is estimated from the wheels (drifts), and all vision code was removed.

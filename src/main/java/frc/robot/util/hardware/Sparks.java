@@ -33,10 +33,9 @@ public final class Sparks {
    */
   public static SparkMax create(int canId, SparkMaxConfig config) {
     SparkMax spark = new SparkMax(canId, MotorType.kBrushless);
-    // No mechanism on this robot uses hardware limit switches, so never let the limit inputs stop
-    // a motor. On the swerve modules the encoder shares the data port with those inputs; a noisy
-    // "limit" there can block a steering motor in one direction (seen as red/white LED flicker
-    // even while disabled). Set first so the mechanism's own config can still override it.
+    // No mechanism on this robot uses hardware limit switches, so the limit inputs must never stop
+    // a motor. REV's default already ignores them (MotorConfigTest confirms); this just makes it
+    // explicit. Set first so a mechanism's own config could still override it.
     SparkMaxConfig full = new SparkMaxConfig();
     full.limitSwitch
         .forwardLimitSwitchTriggerBehavior(Behavior.kKeepMovingMotor)

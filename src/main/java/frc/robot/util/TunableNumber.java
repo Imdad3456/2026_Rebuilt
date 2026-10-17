@@ -7,6 +7,7 @@ import edu.wpi.first.networktables.PubSubOption;
 
 public class TunableNumber {
     private final DoubleEntry entry;
+    private final double defaultValue;
     private double lastValue;
 
     public TunableNumber(String path, double defaultValue) {
@@ -17,10 +18,21 @@ public class TunableNumber {
         // no value until someone types one, so you can't see what you're tuning from. Keeps an
         // existing value (e.g. one a dashboard set) instead of overwriting it.
         this.entry.setDefault(defaultValue);
+        this.defaultValue = defaultValue;
         this.lastValue = defaultValue;
     }
 
-    public double get() { return entry.get(); }
+    /**
+     * The current value. On the FMS (or with tuning mode off) this is always the value from the
+     * code: a dashboard typo can't change the robot during a match. Tune in the pits or on a
+     * practice field, then copy good values into the code.
+     */
+    public double get() {
+        if (!TuningManager.kTuningMode || DriverStation.isFMSAttached()) {
+            return defaultValue;
+        }
+        return entry.get();
+    }
 
     /**
      * True once each time the dashboard value changes. Subsystems use this to push new
