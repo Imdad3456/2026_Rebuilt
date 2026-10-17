@@ -21,6 +21,7 @@ import frc.robot.configs.ExtenderConfigs;
 import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.ExtenderConstants;
 import frc.robot.constants.GlobalConstants;
+import frc.robot.util.diagnostics.RobotDiagnostics;
 import frc.robot.util.hardware.Sparks;
 
 /**
@@ -55,6 +56,8 @@ public class ExtenderSubsystem extends SubsystemBase {
    * lingers and the change to 0 would otherwise look like a reboot.
    */
   private double m_ignoreJumpsUntil = Double.NEGATIVE_INFINITY;
+  /** Pushing without moving, short of the target, for a moment (see kStallSeconds). */
+  private final Debouncer m_stoppedShortDebouncer = new Debouncer(ExtenderConstants.kStallSeconds);
   /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
   private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
   /** The power-on position counts as home (the robot must start with the box retracted). */
@@ -125,6 +128,20 @@ public class ExtenderSubsystem extends SubsystemBase {
       return;
     }
 
+    // Pushing but not moving, short of the target: the target is past a hard stop (or the box is
+    // jammed). Holding that target would run the NEOs at stall indefinitely, so accept where the
+    // box actually is.
+    boolean stoppedShort = Math.abs(m_target - leaderPos) > ExtenderConstants.kAllowedClosedLoopError
+        && Math.abs(m_leaderEncoder.getVelocity()) < ExtenderConstants.kStallSpeed
+        && Math.abs(m_leader.getAppliedOutput()) > ExtenderConstants.kStallMinOutput;
+    if (m_stoppedShortDebouncer.calculate(stoppedShort)) {
+      setStatus(String.format("STOPPED SHORT at %.1f in (target %.1f in) - holding there",
+          Units.metersToInches(leaderPos), Units.metersToInches(m_target)));
+      RobotDiagnostics.logEvent("EXTENDER " + m_status);
+      m_target = leaderPos;
+      m_stoppedShortDebouncer.calculate(false);
+    }
+
     // Only the leader is commanded. A setpoint sent to the follower would knock it out of
     // follower mode and the two sides would fight.
     m_controller.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
@@ -192,12 +209,19 @@ public class ExtenderSubsystem extends SubsystemBase {
 
   /** Move fully out. */
   public Command extend() {
-    return runOnce(() -> m_target = ExtenderConstants.kExtended).withName("ExtenderOut");
+    return runOnce(() -> moveTo(ExtenderConstants.kExtended)).withName("ExtenderOut");
   }
 
   /** Move fully in. */
   public Command retract() {
-    return runOnce(() -> m_target = ExtenderConstants.kRetracted).withName("ExtenderIn");
+    return runOnce(() -> moveTo(ExtenderConstants.kRetracted)).withName("ExtenderIn");
+  }
+
+  private void moveTo(double target) {
+    m_target = target;
+    if (m_status.startsWith("STOPPED SHORT")) {
+      setStatus("READY");
+    }
   }
 
   /**

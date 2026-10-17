@@ -22,6 +22,7 @@ public class ExtenderSafetyTest {
   private static ExtenderSubsystem m_extender;
   private static SparkRelativeEncoderSim m_leaderEncoder;
   private static SparkRelativeEncoderSim m_followerEncoder;
+  private static com.revrobotics.sim.SparkMaxSim m_leaderSim;
 
   @BeforeEach
   void setup() {
@@ -35,7 +36,11 @@ public class ExtenderSafetyTest {
       m_extender = new ExtenderSubsystem();
       m_leaderEncoder = new SparkRelativeEncoderSim(spark(CanIdConstants.kExtenderMotor1));
       m_followerEncoder = new SparkRelativeEncoderSim(spark(CanIdConstants.kExtenderMotor2));
+      m_leaderSim = new com.revrobotics.sim.SparkMaxSim(spark(CanIdConstants.kExtenderMotor1),
+          edu.wpi.first.math.system.plant.DCMotor.getNEO(1));
     }
+    m_leaderSim.setAppliedOutput(0); // not pushing unless a test says so
+    m_leaderEncoder.setVelocity(0);
     // Start every test retracted, homed and fault-free.
     m_leaderEncoder.setPosition(0);
     m_followerEncoder.setPosition(0);
@@ -182,6 +187,49 @@ public class ExtenderSafetyTest {
     moveTo(Units.inchesToMeters(10));
     loop(0.0);
     assertTrue(m_extender.isFaulted(), "a genuine reset is still detected");
+  }
+
+  @Test
+  void stopsPushingWhenTheBoxCantReachTheTarget() {
+    var scheduler = edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance();
+    scheduler.schedule(m_extender.extend()); // target: fully out (12 in)
+    scheduler.run();
+    // The box reaches its real hard stop 0.5 in short of the target and stops there.
+    moveTo(Units.inchesToMeters(11.5));
+    m_leaderEncoder.setVelocity(0);
+    m_leaderSim.setAppliedOutput(0.1); // still pushing
+
+    for (int i = 0; i < 10; i++) {   // 0.2 s: a brief pause is fine
+      loop(Units.inchesToMeters(11.5));
+    }
+    assertEquals(12.0, m_extender.getTargetInches(), 1e-6, "don't give up on a brief pause");
+
+    for (int i = 0; i < 30; i++) {   // 0.6 s more: clearly stalled against the stop
+      loop(Units.inchesToMeters(11.5));
+    }
+    assertEquals(11.5, m_extender.getTargetInches(), 0.05, "accept where it stopped; stop pushing");
+    assertFalse(m_extender.isFaulted(), "stopping short isn't a fault");
+  }
+
+  @Test
+  void keepsPushingWhileMovingOrIdle() {
+    var scheduler = edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance();
+    scheduler.schedule(m_extender.extend());
+    scheduler.run();
+    // Moving toward the target with output applied: normal motion, not a stall.
+    m_leaderSim.setAppliedOutput(0.3);
+    m_leaderEncoder.setVelocity(0.2);
+    for (int i = 0; i < 40; i++) {
+      loop(Units.inchesToMeters(6));
+    }
+    assertEquals(12.0, m_extender.getTargetInches(), 1e-6);
+    // Not moving but not pushing either (e.g. disabled): nothing to protect.
+    m_leaderEncoder.setVelocity(0);
+    m_leaderSim.setAppliedOutput(0);
+    for (int i = 0; i < 40; i++) {
+      loop(Units.inchesToMeters(6));
+    }
+    assertEquals(12.0, m_extender.getTargetInches(), 1e-6);
   }
 
   @Test

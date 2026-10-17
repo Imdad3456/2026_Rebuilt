@@ -93,6 +93,14 @@ public final class ExtenderConstants {
     /** Plus this much (m), so small changes never count. */
     public static final double kJumpMargin = Units.inchesToMeters(1.0);
 
+    // Stopped short: pushing but not moving, short of the target (target past a hard stop, or the
+    // box is jammed). After this long, hold where it is instead of pushing the NEOs at stall.
+    public static final double kStallSeconds = 0.5;
+    /** Slower than this (m/s, ~0.2 in/s) counts as not moving. */
+    public static final double kStallSpeed = 0.005;
+    /** More than this motor output (fraction, ~0.3 V) counts as pushing. */
+    public static final double kStallMinOutput = 0.03;
+
     // Homing: drive gently into the retracted hard stop until both motors stall.
     public static final double kHomingVoltage = -2.4; // about 20% output
     /** Both motors above this current (amps) for kHomingStallSeconds = at the hard stop. */
