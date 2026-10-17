@@ -105,6 +105,9 @@ public final class RobotDiagnostics {
   private final IntegerLogEntry[] m_motorFaults;
   private final IntegerLogEntry[] m_motorWarnings;
   private final StringLogEntry[] m_motorLastError;
+  private final BooleanLogEntry[] m_motorFwdLimit;
+  private final BooleanLogEntry[] m_motorRevLimit;
+  private final boolean[] m_prevLimitPressed;
   private final int[] m_prevFaultBits;
   private final int[] m_prevWarningBits;
   private int m_nextMotor = 0;
@@ -181,6 +184,9 @@ public final class RobotDiagnostics {
     m_motorFaults = new IntegerLogEntry[n];
     m_motorWarnings = new IntegerLogEntry[n];
     m_motorLastError = new StringLogEntry[n];
+    m_motorFwdLimit = new BooleanLogEntry[n];
+    m_motorRevLimit = new BooleanLogEntry[n];
+    m_prevLimitPressed = new boolean[n];
     m_prevFaultBits = new int[n];
     m_prevWarningBits = new int[n];
     for (int i = 0; i < n; i++) {
@@ -188,6 +194,8 @@ public final class RobotDiagnostics {
       m_motorFaults[i] = new IntegerLogEntry(log, prefix + "FaultBits");
       m_motorWarnings[i] = new IntegerLogEntry(log, prefix + "WarningBits");
       m_motorLastError[i] = new StringLogEntry(log, prefix + "LastError");
+      m_motorFwdLimit[i] = new BooleanLogEntry(log, prefix + "ForwardLimitPressed");
+      m_motorRevLimit[i] = new BooleanLogEntry(log, prefix + "ReverseLimitPressed");
     }
 
     m_sparkOk = new boolean[n];
@@ -404,6 +412,17 @@ public final class RobotDiagnostics {
     Faults faults = spark.getFaults();
     Warnings warnings = spark.getWarnings();
     REVLibError lastError = spark.getLastError();
+
+    // No mechanism has limit switches, so a "pressed" reading is noise on the data port.
+    boolean fwdLimit = spark.getForwardLimitSwitch().isPressed();
+    boolean revLimit = spark.getReverseLimitSwitch().isPressed();
+    m_motorFwdLimit[i].update(fwdLimit);
+    m_motorRevLimit[i].update(revLimit);
+    if ((fwdLimit || revLimit) && !m_prevLimitPressed[i]) {
+      event("SPARK CAN " + spark.getDeviceId() + ": limit input reads PRESSED (" + (fwdLimit ? "fwd " : "")
+          + (revLimit ? "rev" : "") + ") - no limit switches are installed; check the data-port wiring", false);
+    }
+    m_prevLimitPressed[i] = fwdLimit || revLimit;
 
     m_motorFaults[i].update(faults.rawBits);
     m_motorWarnings[i].update(warnings.rawBits);

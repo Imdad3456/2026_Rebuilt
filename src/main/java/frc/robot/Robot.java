@@ -7,8 +7,10 @@ package frc.robot;
 import edu.wpi.first.epilogue.Epilogue;
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.epilogue.logging.FileBackend;
+import edu.wpi.first.net.WebServer;
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.Filesystem;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -25,6 +27,7 @@ public class Robot extends TimedRobot {
   private final RobotContainer m_robotContainer;
 
   private final RobotDiagnostics m_diagnostics;
+  private long m_loopCount = 0;
 
   public Robot() {
     // Everything is recorded to a .wpilog on the roboRIO (or a USB stick): NetworkTables, DS
@@ -42,6 +45,12 @@ public class Robot extends TimedRobot {
     // Created after RobotContainer so every motor controller already exists.
     m_diagnostics = RobotDiagnostics.start(build);
     m_diagnostics.setDriveCommand(m_robotContainer.getDriveCommand());
+
+    // Lets Elastic download the dashboard: File > Load Layout From Robot (Ctrl+D), pick
+    // elastic-layout.json from the deploy folder. Real robot only (tests shouldn't open ports).
+    if (isReal()) {
+      WebServer.start(5800, Filesystem.getDeployDirectory().getPath());
+    }
 
     // @Logged values go only to the log file, not over the radio.
     Epilogue.configure(config -> config.backend = new FileBackend(DataLogManager.getLog()));
@@ -65,6 +74,9 @@ public class Robot extends TimedRobot {
       throw e;
     }
     m_diagnostics.periodic(loopStart);
+    if (++m_loopCount % 5 == 0) {
+      m_robotContainer.updateDashboard(); // 10 Hz is plenty for the drive team's display
+    }
   }
 
   @Override

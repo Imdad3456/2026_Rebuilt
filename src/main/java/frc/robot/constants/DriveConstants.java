@@ -19,12 +19,9 @@ public class DriveConstants {
 
     // Driving Parameters - Note that these are not the maximum capable speeds of
     // the robot, rather the allowed maximum speeds
-
-    /** Speed adjustment factor for teleoperated driving. Multiplied by theoretical max speed. */
-    public static final TunableNumber speedAdjustTeleOp = TuningManager.register("Drive/speedAdjustTeleOp", 0.9);
             
     /** Maximum adjusted speed for teleoperated driving, in meters per second. */
-    public static final double kAdjustedMaxSpeedMbpsTeleOp = NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond * speedAdjustTeleOp.get();
+    public static final double kAdjustedMaxSpeedMbpsTeleOp = NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond * 0.9; // 90% of top speed; the driver's slider scales below this
     
     /** Maximum angular speed of the robot, in radians per second. */
     public static final TunableNumber kMaxAngularSpeed = TuningManager.register("Drive/kMaxAngularSpeed", 2 * Math.PI); // radians per second

@@ -10,6 +10,8 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 
 import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -168,6 +170,20 @@ public class RobotContainer {
   public double getShooterRPM() {
     return LauncherSubsystem.rpmFromSlider(OIConstants.sliderToPercent(
         m_operator.getRawAxis(OIConstants.kShooterSpeedSliderAxis), OIConstants.kShooterSpeedSliderInverted));
+  }
+
+  /**
+   * Operator-facing values for the Elastic dashboard (deploy/elastic-layout.json). Called at
+   * 10 Hz. Only what the drive team needs; detailed telemetry goes to the log file.
+   */
+  public void updateDashboard() {
+    SmartDashboard.putNumber("Robot/Battery Voltage", RobotController.getBatteryVoltage());
+    SmartDashboard.putNumber("Robot/Match Time", DriverStation.getMatchTime());
+    SmartDashboard.putNumber("Launcher/Actual RPM", Math.round(m_launcher.getActualRPM()));
+    SmartDashboard.putNumber("Operator/Shooter Slider RPM", Math.round(getShooterRPM()));
+    SmartDashboard.putNumber("Operator/Intake Speed %", Math.round(getIntakeSpeed() * 100));
+    SmartDashboard.putNumber("Driver/Drive Speed %", Math.round(getDriveSpeedScale() * 100));
+    SmartDashboard.putNumber("Extender/Position (in)", Math.round(m_extender.getPositionInches() * 10) / 10.0);
   }
 
   /** The drivetrain's default (teleop) drive command. */

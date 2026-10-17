@@ -9,6 +9,7 @@ import com.revrobotics.REVLibError;
 import com.revrobotics.ResetMode;
 import com.revrobotics.spark.SparkLowLevel.MotorType;
 import com.revrobotics.spark.SparkMax;
+import com.revrobotics.spark.config.LimitSwitchConfig.Behavior;
 import com.revrobotics.spark.config.SparkMaxConfig;
 
 import edu.wpi.first.wpilibj.DataLogManager;
@@ -32,8 +33,17 @@ public final class Sparks {
    */
   public static SparkMax create(int canId, SparkMaxConfig config) {
     SparkMax spark = new SparkMax(canId, MotorType.kBrushless);
+    // No mechanism on this robot uses hardware limit switches, so never let the limit inputs stop
+    // a motor. On the swerve modules the encoder shares the data port with those inputs; a noisy
+    // "limit" there can block a steering motor in one direction (seen as red/white LED flicker
+    // even while disabled). Set first so the mechanism's own config can still override it.
+    SparkMaxConfig full = new SparkMaxConfig();
+    full.limitSwitch
+        .forwardLimitSwitchTriggerBehavior(Behavior.kKeepMovingMotor)
+        .reverseLimitSwitchTriggerBehavior(Behavior.kKeepMovingMotor);
+    full.apply(config);
     check(spark, "boot configure",
-        spark.configure(config, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
+        spark.configure(full, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters));
     s_all.add(spark);
     return spark;
   }
