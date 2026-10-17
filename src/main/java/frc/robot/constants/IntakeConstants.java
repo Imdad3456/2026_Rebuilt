@@ -1,7 +1,7 @@
 package frc.robot.constants;
 
 /**
- * Intake settings. The intake motor also runs the floor conveyor. Speed comes from the operator's
+ * Intake settings. Speed comes from the operator's
  * intake slider (Doyenne_2026 used a fixed 0.35).
  */
 public final class IntakeConstants {

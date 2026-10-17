@@ -60,6 +60,13 @@ public final class ExtenderConstants {
      */
     public static final double kSoftLimitMargin = Units.inchesToMeters(0.5);
 
+    // Shake while shooting: pull in this far and back out, repeatedly, to loosen stuck balls.
+    public static final double kAgitateDepth = Units.inchesToMeters(2.0);
+    /** Time for each in or out stroke. At the motion limits above, 2 in takes about 0.3 s. */
+    public static final double kAgitateStrokeSeconds = 0.35;
+    /** Only shake if the box is at least this far out (never jab into the retracted stop). */
+    public static final double kAgitateMinPosition = Units.inchesToMeters(6.0);
+
     // Safety
     /** Leader/follower disagreement that trips the skew fault (Doyenne_2026 used 2 in). */
     public static final double kMaxSkew = Units.inchesToMeters(2.0);

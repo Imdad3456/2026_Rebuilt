@@ -81,7 +81,8 @@ public class RobotContainer {
             .withName("ToggleFieldRelative"));
 
     // ---- Operator ----
-    // Intake in, speed from the intake slider. The intake motor also runs the floor conveyor.
+    // Intake in, speed from the intake slider. Intake motor only: the loader (which also runs
+    // the live floor) isn't needed while intaking.
     m_operator.button(OIConstants.kIntakeReceiveButton).whileTrue(m_intake.receive(this::getIntakeSpeed));
 
     // Eject backwards. Reversing the feeder too makes this the unjam button.
@@ -96,6 +97,9 @@ public class RobotContainer {
     // After each ball the RPM dips; the feeder pauses until it recovers, so every ball leaves at
     // the same speed and nothing gets fed into a slowed flywheel (which is what jammed it).
     m_operator.button(OIConstants.kLauncherButton).whileTrue(shoot(this::getShooterRPM));
+    // Also shake the box in and out while shooting, to loosen stuck balls. Bound separately so
+    // pressing an extender button mid-shot only stops the shaking, not the shot.
+    m_operator.button(OIConstants.kLauncherButton).whileTrue(m_extender.agitate());
 
     m_operator.button(OIConstants.kLauncherIdleOnButton).onTrue(m_launcher.idle());
     m_operator.button(OIConstants.kLauncherIdleOffButton).onTrue(m_launcher.off());
@@ -120,7 +124,8 @@ public class RobotContainer {
     NamedCommands.registerCommand("IntakeStop", m_intake.stop());
     NamedCommands.registerCommand("SpinUp", m_launcher.spinUp(AutoConstants.kAutoShotRPM::get));
     NamedCommands.registerCommand("Shoot",
-        shoot(AutoConstants.kAutoShotRPM::get).withTimeout(AutoConstants.kShootSeconds));
+        shoot(AutoConstants.kAutoShotRPM::get).alongWith(m_extender.agitate())
+            .withTimeout(AutoConstants.kShootSeconds));
     NamedCommands.registerCommand("ExtenderOut", m_extender.extend());
     NamedCommands.registerCommand("ExtenderIn", m_extender.retract());
   }

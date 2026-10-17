@@ -5,9 +5,9 @@ package frc.robot.constants;
  *
  * <pre>
  * Swerve turning 1, 3, 5, 7    Swerve driving 2, 4, 6, 8
- * Intake 10 (also runs the floor conveyor)
+ * Intake 10
  * Extender 20-24    Climber 25-29 (not installed)
- * Feeder 30-34      Launcher 35-39 (TalonFX)
+ * Feeder 30-34 (shooter loader; also runs the live floor)      Launcher 35-39 (TalonFX)
  * PDH 60
  * </pre>
  */

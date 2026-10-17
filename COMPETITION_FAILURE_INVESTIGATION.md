@@ -306,6 +306,6 @@ joystick enumeration or swerve hardware. Those need the checklist above on the r
 5. **Electrical health** (battery age, radio power, CAN wiring and termination, main breaker,
    power connectors). Software can't detect or fix these, but the logs will now show their effects.
 6. **Hardware facts now come from `Doyenne_2026`** (Sept 25): TalonFX launcher, 3" wheels with a
-   12-tooth pinion, 36:1 extender with a 2.10" pulley, inverted feeder, no rollers (the intake
-   drives the floor conveyor). Each was ported into this codebase.
+   12-tooth pinion, 36:1 extender with a 2.10" pulley, inverted feeder, no rollers (the
+   feeder/loader also drives the live floor). Each was ported into this codebase.
 7. **The extender follower's encoder direction** in hardware-follow mode needs the on-robot check.
