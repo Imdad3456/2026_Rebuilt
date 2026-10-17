@@ -70,19 +70,8 @@ public final class ExtenderConstants {
      */
     public static final double kSoftLimitMargin = Units.inchesToMeters(0.5);
 
-    /** Where the box goes while shooting (March 2026 "launch" position). */
-    public static final double kLaunchPosition = Units.inchesToMeters(8.0);
-    // Shake while shooting: from the launch position, pull in this far and back, repeatedly,
-    // to loosen stuck balls.
-    public static final double kAgitateDepth = Units.inchesToMeters(2.0);
-    /**
-     * Time for each in or out stroke (0.35 s = about 1.4 shakes per second). A full stop-to-stop
-     * 2 in move takes about 0.45 s at the motion limits above; the box is still moving when it
-     * reverses, so it still covers roughly the full depth. Faster shaking needs more acceleration.
-     */
-    public static final double kAgitateStrokeSeconds = 0.35;
-    /** Only shake if the box is at least this far out (never jab into the retracted stop). */
-    public static final double kAgitateMinPosition = Units.inchesToMeters(6.0);
+    /** The box must be at least this far out to shoot (closer in, the balls jam). */
+    public static final double kMinShootPosition = Units.inchesToMeters(6.0);
 
     /** Manual mode: box speed (m/s) at full stick deflection. */
     public static final double kManualSpeed = 0.15;

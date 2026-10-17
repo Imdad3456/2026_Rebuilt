@@ -241,35 +241,6 @@ public class ExtenderSubsystem extends SubsystemBase {
   }
 
   /**
-   * For shooting: if the box is out, move it to the launch position
-   * ({@link ExtenderConstants#kLaunchPosition}), then pull in {@link ExtenderConstants#kAgitateDepth}
-   * and push back out, over and over, to shake loose balls stuck in the box. When it ends the box
-   * returns to where it was. If the box is in, it does nothing.
-   */
-  public Command agitate() {
-    Timer timer = new Timer();
-    double[] base = new double[1];
-    return new FunctionalCommand(
-        () -> {
-          base[0] = m_target;
-          timer.restart();
-        },
-        () -> {
-          if (base[0] < ExtenderConstants.kAgitateMinPosition) {
-            return;
-          }
-          // Starts at the launch position, then alternates in and back.
-          boolean inStroke = ((long) (timer.get() / ExtenderConstants.kAgitateStrokeSeconds)) % 2 == 1;
-          double launch = ExtenderConstants.kLaunchPosition;
-          m_target = inStroke ? launch - ExtenderConstants.kAgitateDepth : launch;
-        },
-        interrupted -> m_target = base[0],
-        () -> false,
-        this)
-        .withName("ExtenderAgitate");
-  }
-
-  /**
    * Drive slowly into the retracted hard stop with soft limits off, then zero both encoders.
    * Gives up after {@link ExtenderConstants#kHomingTimeoutSeconds} instead of pushing forever.
    */

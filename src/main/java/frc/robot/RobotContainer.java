@@ -100,21 +100,14 @@ public class RobotContainer {
     // Shoot: spin up to the shooter-slider RPM and feed only while the flywheel is at speed.
     // After each ball the RPM dips; the feeder pauses until it recovers, so every ball leaves at
     // the same speed and nothing gets fed into a slowed flywheel (which is what jammed it).
+    // The box is left alone while shooting: the shake popped a sprocket and tripped the skew
+    // safety mid-shot in Q16 at NCFAY, freezing the box partway out and jamming the balls.
     m_operator.button(OIConstants.kLauncherButton).whileTrue(shoot(this::getShooterRPM));
-    // Once at speed, the box moves to the launch position and shakes to loosen stuck balls. Bound
-    // separately so pressing an extender button mid-shot only stops the shaking, not the shot.
-    m_operator.button(OIConstants.kLauncherButton).whileTrue(shakeWhenReady());
 
     m_operator.button(OIConstants.kLauncherIdleOnButton).onTrue(m_launcher.idle());
     m_operator.button(OIConstants.kLauncherIdleOffButton).onTrue(m_launcher.off());
 
     m_operator.button(OIConstants.kStopAllButton).onTrue(stopAll());
-  }
-
-  /** Box to the launch position and shake, starting once the flywheel is ready. */
-  private Command shakeWhenReady() {
-    return Commands.waitUntil(m_launcher::isReadyToFeed).andThen(m_extender.agitate())
-        .withName("ShakeWhenReady");
   }
 
   /**
@@ -140,7 +133,7 @@ public class RobotContainer {
 
   /**
    * The default auto: no driving. Extend the box while the flywheel spins up, then shoot the
-   * preloaded balls (feeding only while at speed, box shaking at the launch position), then stop
+   * preloaded balls (feeding only while at speed; the box stays fully out), then stop
    * with the box out, ready to intake in teleop.
    *
    * <p>Never shoots with the box in: the balls jam. If the box's safety trips on the way out (Q2
@@ -152,7 +145,7 @@ public class RobotContainer {
         .withTimeout(AutoConstants.kExtendWaitSeconds);
     Command recoverBox = m_extender.home().andThen(m_extender.extend())
         .andThen(Commands.waitUntil(m_extender::isAtTarget).withTimeout(AutoConstants.kExtendWaitSeconds));
-    Command shoot = m_feeder.feedWhile(m_launcher::isReadyToFeed).alongWith(shakeWhenReady())
+    Command shoot = m_feeder.feedWhile(m_launcher::isReadyToFeed)
         .withTimeout(AutoConstants.kPreloadShootSeconds);
     return Commands.deadline(
         Commands.sequence(
@@ -166,10 +159,10 @@ public class RobotContainer {
         .withName("Extend and Shoot");
   }
 
-  /** The box is far enough out to shoot without jamming (the shake's inner end or beyond). */
+  /** The box is far enough out to shoot without jamming. */
   private boolean isBoxOutForShooting() {
     return !m_extender.isFaulted() && m_extender.isHomed()
-        && m_extender.getPositionInches() >= Units.metersToInches(ExtenderConstants.kAgitateMinPosition) - 0.25;
+        && m_extender.getPositionInches() >= Units.metersToInches(ExtenderConstants.kMinShootPosition) - 0.25;
   }
 
   /**
@@ -181,7 +174,7 @@ public class RobotContainer {
     NamedCommands.registerCommand("Intake", m_intake.receive(() -> IntakeConstants.kAutoSpeed));
     NamedCommands.registerCommand("IntakeStop", m_intake.stop());
     NamedCommands.registerCommand("SpinUp", m_launcher.spinUp(AutoConstants.kAutoShotRPM::get));
-    Command autoShoot = shoot(AutoConstants.kAutoShotRPM::get).alongWith(shakeWhenReady())
+    Command autoShoot = shoot(AutoConstants.kAutoShotRPM::get)
         .withTimeout(AutoConstants.kShootSeconds);
     NamedCommands.registerCommand("Shoot", autoShoot);
     // Names used by the March 2026 autos (TestAuto).
