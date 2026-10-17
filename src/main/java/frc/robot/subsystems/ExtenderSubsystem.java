@@ -338,6 +338,12 @@ public class ExtenderSubsystem extends SubsystemBase {
     return m_status;
   }
 
+  /** Within the closed-loop tolerance of its target (or it stopped short and now holds there). */
+  @Logged(name = "AtTarget")
+  public boolean isAtTarget() {
+    return Math.abs(m_target - m_leaderEncoder.getPosition()) <= ExtenderConstants.kAllowedClosedLoopError;
+  }
+
   @Logged(name = "Homed")
   public boolean isHomed() {
     return m_isHomed;

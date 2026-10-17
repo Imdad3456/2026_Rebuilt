@@ -67,7 +67,8 @@ public class RobotContainer {
 
     // PathPlanner autos (if its settings are deployed) plus the hand-written ones.
     m_autoChooser = AutoBuilder.isConfigured() ? AutoBuilder.buildAutoChooser() : new SendableChooser<>();
-    m_autoChooser.setDefaultOption("Do Nothing", Commands.none().withName("Do Nothing"));
+    m_autoChooser.setDefaultOption("Extend and Shoot", extendAndShoot());
+    m_autoChooser.addOption("Do Nothing", Commands.none().withName("Do Nothing"));
     m_autoChooser.addOption("Simple Auto", Autos.driveStraight(m_drive));
     SmartDashboard.putData("Auto choices", m_autoChooser);
   }
@@ -135,6 +136,22 @@ public class RobotContainer {
   }
 
   /**
+   * The default auto: no driving. Extend the box while the flywheel spins up, then shoot the
+   * preloaded balls (feeding only while at speed, box shaking at the launch position), then stop
+   * with the box out, ready to intake in teleop.
+   */
+  private Command extendAndShoot() {
+    return Commands.deadline(
+        Commands.sequence(
+            m_extender.extend(),
+            Commands.waitUntil(m_extender::isAtTarget).withTimeout(AutoConstants.kExtendWaitSeconds),
+            m_feeder.feedWhile(m_launcher::isReadyToFeed).alongWith(shakeWhenReady())
+                .withTimeout(AutoConstants.kPreloadShootSeconds)),
+        m_launcher.spinUp(AutoConstants.kAutoShotRPM::get))
+        .withName("Extend and Shoot");
+  }
+
+  /**
    * Commands PathPlanner autos can use by name (event markers, or command blocks in an .auto).
    * Must be registered before any auto is built. "Intake" and "SpinUp" run until the path or
    * group ends them; "Shoot" ends on its own after {@link AutoConstants#kShootSeconds}.
@@ -191,6 +208,16 @@ public class RobotContainer {
 
     Command auto = m_autoChooser.getSelected();
     m_alerts.update(auto == null ? "Do Nothing" : auto.getName());
+  }
+
+  /** For simulation tests only. */
+  ExtenderSubsystem getExtenderForTest() {
+    return m_extender;
+  }
+
+  /** For simulation tests only. */
+  LauncherSubsystem getLauncherForTest() {
+    return m_launcher;
   }
 
   /** The drivetrain's default (teleop) drive command. */

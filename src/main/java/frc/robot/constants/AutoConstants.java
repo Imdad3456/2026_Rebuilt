@@ -21,5 +21,11 @@ public final class AutoConstants {
     /** How long the "Shoot" named command runs before ending. */
     public static final double kShootSeconds = 2.0;
 
+    // "Extend and Shoot" (the default auto): box out, shoot the preloaded balls, done.
+    /** Give up waiting for the box to report "out" after this long and shoot anyway. */
+    public static final double kExtendWaitSeconds = 2.5;
+    /** How long to keep feeding. Long enough to empty the preload; raise it if balls are left. */
+    public static final double kPreloadShootSeconds = 5.0;
+
     private AutoConstants() {}
 }
