@@ -49,6 +49,12 @@ public class ExtenderSubsystem extends SubsystemBase {
   private double m_prevLeaderPos;
   private double m_prevFollowerPos;
   private double m_prevTime = Double.NaN;
+  /**
+   * After we zero the encoders ourselves, ignore jumps until this time. A real SPARK applies the
+   * new zero over CAN and reports it a status frame or two later, so the old reading briefly
+   * lingers and the change to 0 would otherwise look like a reboot.
+   */
+  private double m_ignoreJumpsUntil = Double.NEGATIVE_INFINITY;
   /** Both motors must stay stalled briefly before homing counts as done (ignores current spikes). */
   private final Debouncer m_stallDebouncer = new Debouncer(ExtenderConstants.kHomingStallSeconds);
   /** The power-on position counts as home (the robot must start with the box retracted). */
@@ -85,8 +91,8 @@ public class ExtenderSubsystem extends SubsystemBase {
     double leaderPos = m_leaderEncoder.getPosition();
     double followerPos = m_followerEncoder.getPosition();
     double dt = Double.isNaN(m_prevTime) ? 0.0 : now - m_prevTime;
-    boolean jumped = isEncoderJump(m_prevLeaderPos, leaderPos, dt)
-        || isEncoderJump(m_prevFollowerPos, followerPos, dt);
+    boolean jumped = now >= m_ignoreJumpsUntil
+        && (isEncoderJump(m_prevLeaderPos, leaderPos, dt) || isEncoderJump(m_prevFollowerPos, followerPos, dt));
     m_prevLeaderPos = leaderPos;
     m_prevFollowerPos = followerPos;
     m_prevTime = now;
@@ -265,6 +271,7 @@ public class ExtenderSubsystem extends SubsystemBase {
       m_leaderEncoder.setPosition(0);
       m_followerEncoder.setPosition(0);
       rememberPositions();
+      m_ignoreJumpsUntil = Timer.getFPGATimestamp() + ExtenderConstants.kZeroSettleSeconds;
       m_target = ExtenderConstants.kRetracted;
       m_isHomed = true;
       m_faulted = false;

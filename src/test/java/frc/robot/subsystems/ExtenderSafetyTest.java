@@ -164,6 +164,27 @@ public class ExtenderSafetyTest {
   }
 
   @Test
+  void homingZeroIsNotMistakenForAReboot() {
+    // The box was 10 in off when the operator homed it.
+    moveTo(Units.inchesToMeters(10));
+    m_extender.finishHoming(true);
+    // A real SPARK reports the new zero a frame or two later: the old reading lingers first.
+    loop(Units.inchesToMeters(10));
+    loop(Units.inchesToMeters(10));
+    loop(0.0);
+    assertFalse(m_extender.isFaulted(), "our own zeroing must not look like a SPARK reboot");
+    assertTrue(m_extender.isHomed());
+
+    // After the settle window, a real reset is still caught.
+    for (int i = 0; i < 20; i++) {
+      loop(0.0);
+    }
+    moveTo(Units.inchesToMeters(10));
+    loop(0.0);
+    assertTrue(m_extender.isFaulted(), "a genuine reset is still detected");
+  }
+
+  @Test
   void jumpDetectionThresholds() {
     assertFalse(ExtenderSubsystem.isEncoderJump(0.10, 0.11, 0.02), "1 cm in 20 ms is real motion");
     assertTrue(ExtenderSubsystem.isEncoderJump(0.25, 0.0, 0.02), "25 cm in 20 ms is a reset");

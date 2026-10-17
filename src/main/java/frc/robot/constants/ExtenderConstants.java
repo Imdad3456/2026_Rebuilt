@@ -88,6 +88,8 @@ public final class ExtenderConstants {
      * Twice the physical top speed, so normal driving (even a slow loop) never trips it.
      */
     public static final double kMaxPlausibleSpeed = 2.0 * NeoMotorConstants.kFreeSpeedRpm * kVelocityFactor;
+    /** After zeroing the encoders ourselves, ignore jumps this long while the SPARKs report it. */
+    public static final double kZeroSettleSeconds = 0.25;
     /** Plus this much (m), so small changes never count. */
     public static final double kJumpMargin = Units.inchesToMeters(1.0);
 
