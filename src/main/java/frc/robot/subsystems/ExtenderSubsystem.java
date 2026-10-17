@@ -57,12 +57,14 @@ public class ExtenderSubsystem extends SubsystemBase {
   private boolean m_faulted = false;
   /** True while the homing command drives the motors with raw voltage. */
   private boolean m_homing = false;
+  /** Human-readable state for the drive team (dashboard and alerts). */
+  private String m_status = "READY";
 
   public ExtenderSubsystem() {
     // Deliberately no setPosition(0) here: see the class comment.
     m_target = m_leaderEncoder.getPosition();
     rememberPositions();
-    SmartDashboard.putString("Extender/Status", "READY");
+    setStatus("READY");
   }
 
   @Override
@@ -134,7 +136,7 @@ public class ExtenderSubsystem extends SubsystemBase {
     m_faulted = true;
     // Hold where it stopped when resumed, instead of lunging back to the old target.
     m_target = m_leaderEncoder.getPosition();
-    SmartDashboard.putString("Extender/Status", "CRITICAL FAILURE: " + reason);
+    setStatus("CRITICAL FAILURE: " + reason);
     // Reported once; the fault latches.
     DriverStation.reportError(">>> [EXTENDER] " + reason + " - re-home to clear", false);
   }
@@ -148,7 +150,7 @@ public class ExtenderSubsystem extends SubsystemBase {
     return runOnce(() -> {
       m_faulted = false;
       m_target = m_leaderEncoder.getPosition();
-      SmartDashboard.putString("Extender/Status", m_isHomed ? "READY" : "NOT HOMED - press home");
+      setStatus(m_isHomed ? "READY" : "NOT HOMED - press home");
     }).ignoringDisable(true).withName("ExtenderClearFaults");
   }
 
@@ -266,12 +268,12 @@ public class ExtenderSubsystem extends SubsystemBase {
       m_target = ExtenderConstants.kRetracted;
       m_isHomed = true;
       m_faulted = false;
-      SmartDashboard.putString("Extender/Status", "READY");
+      setStatus("READY");
     } else {
       m_leader.stopMotor();
       m_isHomed = false;
       m_target = ExtenderConstants.kRetracted;
-      SmartDashboard.putString("Extender/Status", "HOMING FAILED - press home again");
+      setStatus("HOMING FAILED - press home again");
       DriverStation.reportWarning(">>> [EXTENDER] homing did not finish; extender stopped until re-homed", false);
     }
   }
@@ -294,6 +296,15 @@ public class ExtenderSubsystem extends SubsystemBase {
     }
     double maxMove = ExtenderConstants.kMaxPlausibleSpeed * dtSeconds + ExtenderConstants.kJumpMargin;
     return Math.abs(current - previous) > maxMove;
+  }
+
+  private void setStatus(String status) {
+    m_status = status;
+    SmartDashboard.putString("Extender/Status", status);
+  }
+
+  public String getStatus() {
+    return m_status;
   }
 
   @Logged(name = "Homed")

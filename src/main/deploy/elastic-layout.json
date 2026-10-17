@@ -176,7 +176,7 @@
             "title": "Box Status",
             "x": 0.0,
             "y": 384.0,
-            "width": 512.0,
+            "width": 896.0,
             "height": 128.0,
             "type": "Text Display",
             "properties": {
@@ -187,7 +187,7 @@
           },
           {
             "title": "Box Homed",
-            "x": 512.0,
+            "x": 896.0,
             "y": 384.0,
             "width": 128.0,
             "height": 128.0,
@@ -203,7 +203,7 @@
           },
           {
             "title": "Box Fault",
-            "x": 640.0,
+            "x": 1024.0,
             "y": 384.0,
             "width": 128.0,
             "height": 128.0,
@@ -218,29 +218,15 @@
             }
           },
           {
-            "title": "Motor Health",
-            "x": 768.0,
-            "y": 384.0,
-            "width": 384.0,
-            "height": 128.0,
-            "type": "Text Display",
-            "properties": {
-              "topic": "/SmartDashboard/Health/Report",
-              "period": 0.06,
-              "show_submit_button": false
-            }
-          },
-          {
-            "title": "Controllers",
+            "title": "Alerts",
             "x": 0.0,
-            "y": 512.0,
+            "y": 512,
             "width": 1152.0,
-            "height": 128.0,
-            "type": "Text Display",
+            "height": 256.0,
+            "type": "Alerts",
             "properties": {
-              "topic": "/SmartDashboard/Controllers/Status",
-              "period": 0.06,
-              "show_submit_button": false
+              "topic": "/SmartDashboard/Alerts",
+              "period": 0.06
             }
           }
         ]
@@ -458,6 +444,18 @@
               "topic": "/Tuning/Feeder/Speed",
               "period": 0.06,
               "show_submit_button": true
+            }
+          },
+          {
+            "title": "Alerts",
+            "x": 0.0,
+            "y": 640,
+            "width": 1152.0,
+            "height": 256.0,
+            "type": "Alerts",
+            "properties": {
+              "topic": "/SmartDashboard/Alerts",
+              "period": 0.06
             }
           }
         ]

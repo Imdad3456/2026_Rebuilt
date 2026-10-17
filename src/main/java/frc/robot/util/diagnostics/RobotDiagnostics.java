@@ -241,6 +241,24 @@ public final class RobotDiagnostics {
     return s_instance;
   }
 
+  /** Latest motor health summary ("All motors OK" or which ones have problems). */
+  public static String healthReport() {
+    return s_instance == null || s_instance.m_prevHealthProblems == null ? "All motors OK" : s_instance.m_prevHealthProblems;
+  }
+
+  public static boolean allMotorsOk() {
+    return healthReport().equals("All motors OK");
+  }
+
+  /** Latest controller check ("Both controllers OK" or what's wrong). */
+  public static String controllerStatus() {
+    return s_instance == null || s_instance.m_prevControllerStatus == null ? "Both controllers OK" : s_instance.m_prevControllerStatus;
+  }
+
+  public static boolean controllersOk() {
+    return controllerStatus().equals("Both controllers OK");
+  }
+
   /** Record the joystick values DriveCommand actually sends to the drivetrain. */
   public static void recordDriveInput(double x, double y, double rot, double speedScale) {
     if (s_instance != null) {

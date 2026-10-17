@@ -27,6 +27,7 @@ import frc.robot.subsystems.ExtenderSubsystem;
 import frc.robot.subsystems.FeederSubsystem;
 import frc.robot.subsystems.IntakeSubsystem;
 import frc.robot.subsystems.LauncherSubsystem;
+import frc.robot.util.DriverAlerts;
 
 /** Creates the subsystems and connects the controllers to them. */
 @Logged(strategy = Logged.Strategy.OPT_IN)
@@ -44,6 +45,9 @@ public class RobotContainer {
 
   private final CommandJoystick m_driver = new CommandJoystick(OIConstants.kDriverJoystickPort);
   private final CommandJoystick m_operator = new CommandJoystick(OIConstants.kOperatorJoystickPort);
+
+  /** Plain-language warnings and pop-ups for the drive team (Elastic). */
+  private final DriverAlerts m_alerts = new DriverAlerts(m_extender);
 
   private final DriveCommand m_driveCommand;
   private final SendableChooser<Command> m_autoChooser;
@@ -184,6 +188,9 @@ public class RobotContainer {
     SmartDashboard.putNumber("Operator/Intake Speed %", Math.round(getIntakeSpeed() * 100));
     SmartDashboard.putNumber("Driver/Drive Speed %", Math.round(getDriveSpeedScale() * 100));
     SmartDashboard.putNumber("Extender/Position (in)", Math.round(m_extender.getPositionInches() * 10) / 10.0);
+
+    Command auto = m_autoChooser.getSelected();
+    m_alerts.update(auto == null ? "Do Nothing" : auto.getName());
   }
 
   /** The drivetrain's default (teleop) drive command. */
