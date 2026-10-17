@@ -62,7 +62,11 @@ public final class ExtenderConstants {
 
     // Shake while shooting: pull in this far and back out, repeatedly, to loosen stuck balls.
     public static final double kAgitateDepth = Units.inchesToMeters(2.0);
-    /** Time for each in or out stroke. At the motion limits above, 2 in takes about 0.3 s. */
+    /**
+     * Time for each in or out stroke (0.35 s = about 1.4 shakes per second). A full stop-to-stop
+     * 2 in move takes about 0.45 s at the motion limits above; the box is still moving when it
+     * reverses, so it still covers roughly the full depth. Faster shaking needs more acceleration.
+     */
     public static final double kAgitateStrokeSeconds = 0.35;
     /** Only shake if the box is at least this far out (never jab into the retracted stop). */
     public static final double kAgitateMinPosition = Units.inchesToMeters(6.0);
