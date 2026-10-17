@@ -43,8 +43,6 @@ public class RobotContainer {
   private final CommandJoystick m_driver = new CommandJoystick(OIConstants.kDriverJoystickPort);
   private final CommandJoystick m_operator = new CommandJoystick(OIConstants.kOperatorJoystickPort);
 
-  private boolean m_fieldRelative = true;
-
   private final DriveCommand m_driveCommand;
   private final SendableChooser<Command> m_autoChooser;
 
@@ -55,11 +53,9 @@ public class RobotContainer {
         () -> -m_driver.getY(),
         () -> -m_driver.getX(),
         () -> -m_driver.getZ(),
-        this::getDriveSpeedScale,
-        () -> m_fieldRelative);
+        this::getDriveSpeedScale);
     m_drive.setDefaultCommand(m_driveCommand);
 
-    setFieldRelative(true);
     configureBindings();
     registerNamedCommands();
 
@@ -71,16 +67,11 @@ public class RobotContainer {
   }
 
   private void configureBindings() {
-    // ---- Driver ----
-    m_driver.button(OIConstants.kZeroHeadingButton)
-        .onTrue(Commands.runOnce(m_drive::zeroDriverHeading).ignoringDisable(true).withName("ZeroHeading"));
+    // ---- Driver ---- (no gyro, so no heading or field-relative buttons)
     // Hold to lock the wheels in an X so the robot is hard to push (defense, or holding still to shoot).
     m_driver.button(OIConstants.kXLockButton).whileTrue(m_drive.run(m_drive::setX).withName("XLock"));
-    m_driver.button(OIConstants.kFieldRelativeToggleButton)
-        .onTrue(Commands.runOnce(() -> setFieldRelative(!m_fieldRelative)).ignoringDisable(true)
-            .withName("ToggleFieldRelative"));
 
-    // ---- Operator ----
+    // ---- Operator ---- (March 2026 layout)
     // Intake in, speed from the intake slider. Intake motor only: the loader (which also runs
     // the live floor) isn't needed while intaking.
     m_operator.button(OIConstants.kIntakeReceiveButton).whileTrue(m_intake.receive(this::getIntakeSpeed));
@@ -91,18 +82,41 @@ public class RobotContainer {
 
     m_operator.button(OIConstants.kExtenderOutButton).onTrue(m_extender.extend());
     m_operator.button(OIConstants.kExtenderInButton).onTrue(m_intake.stop().alongWith(m_extender.retract()));
+    m_operator.button(OIConstants.kExtenderManualButton)
+        .whileTrue(m_extender.manual(() -> m_operator.getRawAxis(OIConstants.kExtenderManualAxis)));
     m_operator.button(OIConstants.kExtenderHomeButton).onTrue(m_extender.home());
+    m_operator.button(OIConstants.kClearExtenderFaultsButton).onTrue(m_extender.clearFaults());
 
     // Shoot: spin up to the shooter-slider RPM and feed only while the flywheel is at speed.
     // After each ball the RPM dips; the feeder pauses until it recovers, so every ball leaves at
     // the same speed and nothing gets fed into a slowed flywheel (which is what jammed it).
     m_operator.button(OIConstants.kLauncherButton).whileTrue(shoot(this::getShooterRPM));
-    // Also shake the box in and out while shooting, to loosen stuck balls. Bound separately so
-    // pressing an extender button mid-shot only stops the shaking, not the shot.
-    m_operator.button(OIConstants.kLauncherButton).whileTrue(m_extender.agitate());
+    // Once at speed, the box moves to the launch position and shakes to loosen stuck balls. Bound
+    // separately so pressing an extender button mid-shot only stops the shaking, not the shot.
+    m_operator.button(OIConstants.kLauncherButton).whileTrue(shakeWhenReady());
 
     m_operator.button(OIConstants.kLauncherIdleOnButton).onTrue(m_launcher.idle());
     m_operator.button(OIConstants.kLauncherIdleOffButton).onTrue(m_launcher.off());
+
+    m_operator.button(OIConstants.kStopAllButton).onTrue(stopAll());
+  }
+
+  /** Box to the launch position and shake, starting once the flywheel is ready. */
+  private Command shakeWhenReady() {
+    return Commands.waitUntil(m_launcher::isReadyToFeed).andThen(m_extender.agitate())
+        .withName("ShakeWhenReady");
+  }
+
+  /**
+   * Stop every mechanism: interrupts whatever is running on each subsystem. The launcher stops
+   * (idle off), intake and feeder stop, the box holds where it is, and the drivetrain stops until
+   * the driver moves the stick again.
+   */
+  private Command stopAll() {
+    return Commands.parallel(
+        m_launcher.off(), m_intake.stop(), m_feeder.stop(), m_extender.holdPosition(),
+        m_drive.runOnce(m_drive::stop))
+        .withName("StopAll");
   }
 
   /**
@@ -123,9 +137,12 @@ public class RobotContainer {
     NamedCommands.registerCommand("Intake", m_intake.receive(() -> IntakeConstants.kAutoSpeed));
     NamedCommands.registerCommand("IntakeStop", m_intake.stop());
     NamedCommands.registerCommand("SpinUp", m_launcher.spinUp(AutoConstants.kAutoShotRPM::get));
-    NamedCommands.registerCommand("Shoot",
-        shoot(AutoConstants.kAutoShotRPM::get).alongWith(m_extender.agitate())
-            .withTimeout(AutoConstants.kShootSeconds));
+    Command autoShoot = shoot(AutoConstants.kAutoShotRPM::get).alongWith(shakeWhenReady())
+        .withTimeout(AutoConstants.kShootSeconds);
+    NamedCommands.registerCommand("Shoot", autoShoot);
+    // Names used by the March 2026 autos (TestAuto).
+    NamedCommands.registerCommand("autoLaunch", autoShoot);
+    NamedCommands.registerCommand("autoIntake", m_intake.receive(() -> IntakeConstants.kAutoSpeed));
     NamedCommands.registerCommand("ExtenderOut", m_extender.extend());
     NamedCommands.registerCommand("ExtenderIn", m_extender.retract());
   }
@@ -151,21 +168,6 @@ public class RobotContainer {
   public double getShooterRPM() {
     return LauncherSubsystem.rpmFromSlider(OIConstants.sliderToPercent(
         m_operator.getRawAxis(OIConstants.kShooterSpeedSliderAxis), OIConstants.kShooterSpeedSliderInverted));
-  }
-
-  private void setFieldRelative(boolean fieldRelative) {
-    m_fieldRelative = fieldRelative;
-    SmartDashboard.putBoolean("Drive/Field Relative", fieldRelative);
-  }
-
-  @Logged(name = "FieldRelative")
-  public boolean isFieldRelative() {
-    return m_fieldRelative;
-  }
-
-  /** Zero field-relative "forward" to the robot's current facing. */
-  public void zeroDriverHeading() {
-    m_drive.zeroDriverHeading();
   }
 
   /** The drivetrain's default (teleop) drive command. */

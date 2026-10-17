@@ -118,6 +118,51 @@ public class ExtenderSafetyTest {
     assertFalse(m_extender.isFaulted());
   }
 
+  /** Pull the leader ahead of the follower gradually (not a jump) until the skew check trips. */
+  private void skewLeaderAhead(double meters) {
+    for (double pos = 0; pos <= meters; pos += 0.004) {
+      m_leaderEncoder.setPosition(pos);
+      m_followerEncoder.setPosition(0);
+      SimHooks.stepTiming(0.02);
+      m_extender.periodic();
+    }
+  }
+
+  @Test
+  void clearFaultsResumesAfterSkew() {
+    skewLeaderAhead(Units.inchesToMeters(3));
+    assertTrue(m_extender.isFaulted(), "skew must trip");
+    assertTrue(m_extender.isHomed(), "skew doesn't make the encoders untrustworthy");
+
+    // Clearing only sticks once the skew is actually gone: walk the leader back to the follower
+    // gradually (a sudden change would look like an encoder reset).
+    for (double pos = Units.inchesToMeters(3); pos > 0; pos -= 0.004) {
+      m_leaderEncoder.setPosition(pos);
+      m_followerEncoder.setPosition(0);
+      SimHooks.stepTiming(0.02);
+      m_extender.periodic();
+    }
+    loop(0.0);
+    assertTrue(m_extender.isFaulted(), "the fault stays latched until cleared");
+
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(m_extender.clearFaults());
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().run();
+    assertFalse(m_extender.isFaulted());
+    assertTrue(m_extender.isHomed(), "resumes without re-homing");
+  }
+
+  @Test
+  void clearFaultsDoesNotTrustAResetEncoder() {
+    moveTo(Units.inchesToMeters(10));
+    loop(0.0); // SPARK reboot: encoder jumps to 0
+    assertTrue(m_extender.isFaulted());
+
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().schedule(m_extender.clearFaults());
+    edu.wpi.first.wpilibj2.command.CommandScheduler.getInstance().run();
+    assertFalse(m_extender.isFaulted());
+    assertFalse(m_extender.isHomed(), "still needs homing; position is unknown");
+  }
+
   @Test
   void jumpDetectionThresholds() {
     assertFalse(ExtenderSubsystem.isEncoderJump(0.10, 0.11, 0.02), "1 cm in 20 ms is real motion");

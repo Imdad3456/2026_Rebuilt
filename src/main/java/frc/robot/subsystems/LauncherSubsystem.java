@@ -15,9 +15,6 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.filter.Debouncer;
-import edu.wpi.first.networktables.DoubleSubscriber;
-import edu.wpi.first.networktables.NetworkTable;
-import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.Current;
 import edu.wpi.first.wpilibj.DriverStation;
@@ -27,8 +24,6 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.configs.LauncherConfigs;
 import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.LauncherConstants;
-import frc.robot.constants.VisionConstants;
-import frc.robot.util.VisionUtils;
 import frc.robot.util.hardware.Talons;
 
 /**
@@ -43,11 +38,6 @@ public class LauncherSubsystem extends SubsystemBase {
   private final VelocityVoltage m_velocityRequest = new VelocityVoltage(0);
   private final StatusSignal<AngularVelocity> m_velocity = m_motor.getVelocity();
   private final StatusSignal<Current> m_supplyCurrent = m_motor.getSupplyCurrent();
-
-  // Limelight values, subscribed once instead of looked up by name on every call.
-  private final DoubleSubscriber m_llValid;
-  private final DoubleSubscriber m_llTagId;
-  private final DoubleSubscriber m_llTy;
 
   /**
    * At speed, held steady for a moment. Drops immediately when a shot pulls the RPM down, so the
@@ -65,11 +55,6 @@ public class LauncherSubsystem extends SubsystemBase {
     BaseStatusSignal.setUpdateFrequencyForAll(50, m_velocity, m_supplyCurrent);
     BaseStatusSignal.setUpdateFrequencyForAll(4, m_motor.getFaultField(), m_motor.getStickyFault_BootDuringEnable());
     m_motor.optimizeBusUtilization();
-
-    NetworkTable limelight = NetworkTableInstance.getDefault().getTable(VisionConstants.LIMELIGHT_NAME);
-    m_llValid = limelight.getDoubleTopic(VisionConstants.kTargetValidKey).subscribe(VisionConstants.kDefaultTargetValid);
-    m_llTagId = limelight.getDoubleTopic(VisionConstants.kTargetIdKey).subscribe(VisionConstants.kDefaultTargetId);
-    m_llTy = limelight.getDoubleTopic(VisionConstants.kTargetYKey).subscribe(VisionConstants.kDefaultTargetY);
   }
 
   @Override
@@ -156,21 +141,5 @@ public class LauncherSubsystem extends SubsystemBase {
     double min = LauncherConstants.kMinShotRPM.get();
     double max = LauncherConstants.kMaxShotRPM.get();
     return min + (max - min) * MathUtil.clamp(percent, 0.0, 1.0);
-  }
-
-  /**
-   * Shot RPM from the Limelight's distance to our hub, or idle speed (so atSpeed() is false and
-   * nothing feeds) when the right target isn't visible. Not bound to a button yet.
-   */
-  public double calculateRPMFromLimelight() {
-    boolean hasTarget = m_llValid.get() == 1.0;
-    int tagId = (int) m_llTagId.get();
-    if (!hasTarget || !VisionUtils.isTargetingCorrectHoop(tagId)) {
-      return LauncherConstants.kIdleRPM.get();
-    }
-    double distance = (LauncherConstants.kAprilTagHeight - LauncherConstants.kCameraHeight)
-        / Math.tan(Math.toRadians(LauncherConstants.kMountAngle + m_llTy.get()));
-    double rpm = distance * LauncherConstants.kRPMPerInch.get() + LauncherConstants.kBaseRPM.get();
-    return MathUtil.clamp(rpm, LauncherConstants.kMinShotRPM.get(), LauncherConstants.kMaxShotRPM.get());
   }
 }

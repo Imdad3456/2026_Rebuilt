@@ -43,10 +43,10 @@ public class DriveConstants {
     public static final TunableNumber kDriveV = TuningManager.register("Drive/kV",
             12.0 / NeoSwerveModuleConstants.kMaxSpeedMetersPerSecond);
 
-    public static final TunableNumber kDriveS = TuningManager.register("Drive/kS", 0.1);
+    public static final TunableNumber kDriveS = TuningManager.register("Drive/kS", 0.03);
 
     /** Proportional gain for the turn PID controller. */
-    public static final TunableNumber kTurnP = TuningManager.register("Turn/kP", 1.0);
+    public static final TunableNumber kTurnP = TuningManager.register("Turn/kP", 0.75);
     /** Integral gain for the turn PID controller. */
     public static final TunableNumber kTurnI = TuningManager.register("Turn/kI", 0.0);
     /** Derivative gain for the turn PID controller. */

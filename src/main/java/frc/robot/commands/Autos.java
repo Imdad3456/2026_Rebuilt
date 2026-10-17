@@ -13,7 +13,7 @@ import frc.robot.subsystems.DriveSubsystem;
 public final class Autos {
   /** Drive straight forward at a fixed speed for a fixed time (robot-relative). */
   public static Command driveStraight(DriveSubsystem drive) {
-    return drive.runEnd(() -> drive.drive(AutoConstants.kExampleAutoSpeed, 0, 0, false), drive::stop)
+    return drive.runEnd(() -> drive.drive(AutoConstants.kExampleAutoSpeed, 0, 0), drive::stop)
         .withTimeout(AutoConstants.kExampleAutoTimeout)
         .withName("Simple Auto");
   }

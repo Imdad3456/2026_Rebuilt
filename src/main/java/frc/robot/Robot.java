@@ -74,10 +74,6 @@ public class Robot extends TimedRobot {
 
   @Override
   public void autonomousInit() {
-    // The robot is placed facing away from the driver station at the start of a match, so make
-    // that field-relative "forward". The driver can re-zero any time with the zero-heading button.
-    m_robotContainer.zeroDriverHeading();
-
     m_autonomousCommand = m_robotContainer.getAutonomousCommand();
     RobotDiagnostics.logEvent("AUTO INIT: selected "
         + (m_autonomousCommand != null ? m_autonomousCommand.getName() : "null (nothing selected)"));

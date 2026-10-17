@@ -2,6 +2,7 @@ package frc.robot;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.wpilibj.DriverStation;
@@ -25,9 +26,13 @@ public class RobotSmokeTest {
     assertTrue(HAL.initialize(500, 0));
     try (Robot robot = new Robot()) {
       robot.robotInit();
-      for (String name : new String[] {"Intake", "IntakeStop", "SpinUp", "Shoot", "ExtenderOut", "ExtenderIn"}) {
+      for (String name : new String[] {"Intake", "IntakeStop", "SpinUp", "Shoot", "ExtenderOut",
+          "ExtenderIn", "autoLaunch", "autoIntake"}) {
         assertTrue(NamedCommands.hasCommand(name), "PathPlanner named command missing: " + name);
       }
+      // settings.json is deployed, so PathPlanner must be configured and the March auto must load.
+      assertTrue(AutoBuilder.isConfigured(), "PathPlanner not configured; is settings.json valid?");
+      assertNotNull(AutoBuilder.buildAuto("TestAuto"));
       for (int match = 0; match < 3; match++) {
         setMode(true, true);
         robot.autonomousInit();

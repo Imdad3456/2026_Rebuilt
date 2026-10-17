@@ -1,11 +1,14 @@
 package frc.robot.subsystems;
 
+import java.util.function.DoubleSupplier;
+
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.spark.SparkBase.ControlType;
 import com.revrobotics.spark.SparkClosedLoopController;
 import com.revrobotics.spark.SparkMax;
 
 import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.DriverStation;
@@ -92,7 +95,7 @@ public class ExtenderSubsystem extends SubsystemBase {
     }
 
     if (jumped) {
-      emergencyStop("ENCODER JUMPED (a SPARK probably rebooted)");
+      emergencyStop("ENCODER JUMPED (a SPARK probably rebooted)", false);
       return;
     }
 
@@ -104,13 +107,13 @@ public class ExtenderSubsystem extends SubsystemBase {
 
     double skew = Math.abs(leaderPos - followerPos);
     if (skew > ExtenderConstants.kMaxSkew) {
-      emergencyStop(String.format("SKEW DETECTED: %.2f in", Units.metersToInches(skew)));
+      emergencyStop(String.format("SKEW DETECTED: %.2f in", Units.metersToInches(skew)), true);
       return;
     }
     double leaderAmps = m_leader.getOutputCurrent();
     double followerAmps = m_follower.getOutputCurrent();
     if (Math.abs(leaderAmps - followerAmps) > GlobalConstants.kHighCurrentLimit) {
-      emergencyStop("CURRENT IMBALANCE: L:" + leaderAmps + " F:" + followerAmps);
+      emergencyStop("CURRENT IMBALANCE: L:" + leaderAmps + " F:" + followerAmps, true);
       return;
     }
 
@@ -119,13 +122,64 @@ public class ExtenderSubsystem extends SubsystemBase {
     m_controller.setSetpoint(m_target, ControlType.kMAXMotionPositionControl);
   }
 
-  private void emergencyStop(String reason) {
+  /**
+   * Stop and latch a fault. {@code positionStillValid}: the encoders can still be trusted (skew or
+   * current trips), so "clear faults" can resume. If not (an encoder reset), it must be re-homed.
+   */
+  private void emergencyStop(String reason, boolean positionStillValid) {
     m_leader.stopMotor();
-    m_isHomed = false;
+    if (!positionStillValid) {
+      m_isHomed = false;
+    }
     m_faulted = true;
+    // Hold where it stopped when resumed, instead of lunging back to the old target.
+    m_target = m_leaderEncoder.getPosition();
     SmartDashboard.putString("Extender/Status", "CRITICAL FAILURE: " + reason);
     // Reported once; the fault latches.
     DriverStation.reportError(">>> [EXTENDER] " + reason + " - re-home to clear", false);
+  }
+
+  /**
+   * Clear a latched fault (March "clear extender faults" button). After a skew or current trip it
+   * resumes, holding where it is. After an encoder reset it stays stopped until re-homed, because
+   * its position can't be trusted.
+   */
+  public Command clearFaults() {
+    return runOnce(() -> {
+      m_faulted = false;
+      m_target = m_leaderEncoder.getPosition();
+      SmartDashboard.putString("Extender/Status", m_isHomed ? "READY" : "NOT HOMED - press home");
+    }).ignoringDisable(true).withName("ExtenderClearFaults");
+  }
+
+  /** Stop where it is (used by stop-all). */
+  public Command holdPosition() {
+    return runOnce(() -> m_target = m_leaderEncoder.getPosition()).withName("ExtenderHold");
+  }
+
+  /**
+   * Manual mode while held: the stick moves the box in or out (positive = out), within the normal
+   * travel. Uses the same smooth motion control and safety checks as everything else.
+   */
+  public Command manual(DoubleSupplier stick) {
+    double[] lastTime = new double[1];
+    return new FunctionalCommand(
+        () -> {
+          lastTime[0] = Timer.getFPGATimestamp();
+          m_target = m_leaderEncoder.getPosition();
+        },
+        () -> {
+          double now = Timer.getFPGATimestamp();
+          double input = MathUtil.applyDeadband(stick.getAsDouble(), ExtenderConstants.kManualDeadband);
+          m_target = MathUtil.clamp(
+              m_target + input * ExtenderConstants.kManualSpeed * (now - lastTime[0]),
+              ExtenderConstants.kRetracted, ExtenderConstants.kExtended);
+          lastTime[0] = now;
+        },
+        interrupted -> m_target = m_leaderEncoder.getPosition(),
+        () -> false,
+        this)
+        .withName("ExtenderManual");
   }
 
   /** Move fully out. */
@@ -139,9 +193,10 @@ public class ExtenderSubsystem extends SubsystemBase {
   }
 
   /**
-   * While running: if the box is out, pull it in {@link ExtenderConstants#kAgitateDepth} and push it
-   * back out, over and over, to shake loose balls stuck in the box. When it ends the box returns to
-   * where it was. If the box is in, it does nothing.
+   * For shooting: if the box is out, move it to the launch position
+   * ({@link ExtenderConstants#kLaunchPosition}), then pull in {@link ExtenderConstants#kAgitateDepth}
+   * and push back out, over and over, to shake loose balls stuck in the box. When it ends the box
+   * returns to where it was. If the box is in, it does nothing.
    */
   public Command agitate() {
     Timer timer = new Timer();
@@ -155,9 +210,10 @@ public class ExtenderSubsystem extends SubsystemBase {
           if (base[0] < ExtenderConstants.kAgitateMinPosition) {
             return;
           }
-          // Starts with an "in" stroke, then alternates.
-          boolean inStroke = ((long) (timer.get() / ExtenderConstants.kAgitateStrokeSeconds)) % 2 == 0;
-          m_target = inStroke ? base[0] - ExtenderConstants.kAgitateDepth : base[0];
+          // Starts at the launch position, then alternates in and back.
+          boolean inStroke = ((long) (timer.get() / ExtenderConstants.kAgitateStrokeSeconds)) % 2 == 1;
+          double launch = ExtenderConstants.kLaunchPosition;
+          m_target = inStroke ? launch - ExtenderConstants.kAgitateDepth : launch;
         },
         interrupted -> m_target = base[0],
         () -> false,

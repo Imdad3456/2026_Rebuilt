@@ -19,6 +19,28 @@ the tests pass, but the failure has never been reproduced and no competition log
 > zeroed at the start of auto or with the driver's zero-heading button, not `navX.reset()`, which
 > applies asynchronously. If the gyro disconnects, driving falls back to robot-relative.
 
+## Update: the competition code has been found (`jesterrick/26_Rebuilt`, branch `fine-tuning`)
+
+The team moved to a new repository, `jesterrick/26_Rebuilt`, on Feb 21. The competition was
+**March 13–15**, and that repo's `fine-tuning` branch has commits from March 12 ("fine tuning and
+auto shooting", "auto launch", "tuning mode") through March 16. So the code that ran at competition
+was most likely that branch, not anything in `2026_Rebuilt`. (`Doyenne_2026` is an exact copy of
+`26_Rebuilt` main at `e94629e`, March 12.) The analysis further down, written before this was
+known, covers the older `2026_Rebuilt` code.
+
+**New strong suspect for "the operator couldn't control anything" (code-confirmed, existed at the
+competition):** `RobotContainer.startHealthChecks()` polled every motor every 0.5 s from a background
+thread. Any active fault on a SPARK (`hasActiveFault()`), or a failed version read, marked that
+motor `ERROR`, and **every operator button was gated on `RobotHealth.isHealthy(...)`**. Intake,
+shooter, idle and extender buttons stopped working whenever their motor reported a fault, which is
+far more likely under field load (brownouts, CAN errors) than in the pits. A held button's
+`whileTrue` command was also cancelled the moment health dropped. This does not explain the
+drivetrain failing (driving was not gated), so it is probably part of the story, not all of it.
+The current code has no such gating; health is displayed only.
+
+**Robot changes since:** there is no Limelight and no navX anymore. Driving is robot-relative only,
+odometry heading is estimated from the wheels (drifts), and all vision code was removed.
+
 ## The symptom
 
 - The robot worked normally in the pits.

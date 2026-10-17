@@ -455,11 +455,10 @@ public final class RobotDiagnostics {
    */
   private void publishControllerCheck() {
     String driver = checkController("Driver", OIConstants.kDriverJoystickPort,
-        Math.max(OIConstants.kDriveSpeedSliderAxis, 2) + 1,
-        Math.max(OIConstants.kXLockButton,
-            Math.max(OIConstants.kZeroHeadingButton, OIConstants.kFieldRelativeToggleButton)));
+        Math.max(OIConstants.kDriveSpeedSliderAxis, 2) + 1, OIConstants.kXLockButton);
     String operator = checkController("Operator", OIConstants.kOperatorJoystickPort,
-        Math.max(OIConstants.kShooterSpeedSliderAxis, OIConstants.kIntakeSpeedSliderAxis) + 1,
+        Math.max(OIConstants.kExtenderManualAxis,
+            Math.max(OIConstants.kShooterSpeedSliderAxis, OIConstants.kIntakeSpeedSliderAxis)) + 1,
         OIConstants.kLauncherButton);
     boolean ok = driver == null && operator == null;
     String status = ok ? "Both controllers OK"

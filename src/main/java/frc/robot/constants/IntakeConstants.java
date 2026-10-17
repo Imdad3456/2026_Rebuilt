@@ -9,8 +9,8 @@ public final class IntakeConstants {
     public static final double kMinSpeed = 0.2;
     /** Intake duty cycle with the slider all the way up. */
     public static final double kMaxSpeed = 1.0;
-    /** Intake duty cycle in autonomous (no slider). The fixed speed Doyenne_2026 used. */
-    public static final double kAutoSpeed = 0.35;
+    /** Intake duty cycle in autonomous (no slider). The fixed speed from March 2026 tuning. */
+    public static final double kAutoSpeed = 0.65;
 
     private IntakeConstants() {}
 }

@@ -8,7 +8,6 @@ import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
 import com.pathplanner.lib.controllers.PPHolonomicDriveController;
-import com.studica.frc.AHRS;
 
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.hal.FRCNetComm.tInstances;
@@ -16,6 +15,7 @@ import edu.wpi.first.hal.FRCNetComm.tResourceType;
 import edu.wpi.first.hal.HAL;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Twist2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
 import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
@@ -30,9 +30,14 @@ import frc.robot.constants.AutoConstants;
 import frc.robot.constants.CanIdConstants;
 import frc.robot.constants.DriveConstants;
 import frc.robot.constants.NeoSwerveModuleConstants;
-import frc.robot.util.diagnostics.RobotDiagnostics;
 
-/** The swerve drivetrain: four MAXSwerve modules, a navX gyro, and odometry. */
+/**
+ * The swerve drivetrain: four MAXSwerve modules and odometry.
+ *
+ * <p>The robot has NO gyro, so driving is robot-relative only, and the heading used for odometry
+ * (path autos) is estimated from the wheels. Wheel slip and scrub make that heading drift, so
+ * short path autos are usable but long or spinning ones won't hold their rotation accurately.
+ */
 @Logged(strategy = Logged.Strategy.OPT_IN)
 public class DriveSubsystem extends SubsystemBase {
   private static final String[] kModuleNames = {"FrontLeft", "FrontRight", "RearLeft", "RearRight"};
@@ -48,19 +53,11 @@ public class DriveSubsystem extends SubsystemBase {
       new MAXSwerveModule(CanIdConstants.kRearRightDrivingCanId,
           CanIdConstants.kRearRightTurningCanId, DriveConstants.kBackRightChassisAngularOffset)};
 
-  private final AHRS m_gyro = new AHRS(AHRS.NavXComType.kMXP_SPI);
-
   private final SwerveDriveOdometry m_odometry;
 
-  /**
-   * Gyro reading that the driver considers "forward" (away from the driver station). Field-relative
-   * driving is relative to this. It is kept in software instead of calling m_gyro.reset(): the
-   * navX applies a reset asynchronously, so readings right after it can still be the old angle,
-   * which makes the field-relative heading jump.
-   */
-  private Rotation2d m_driverForward = Rotation2d.kZero;
-
-  private boolean m_gyroWasConnected = true;
+  /** Heading estimated from the wheels (there is no gyro). */
+  private Rotation2d m_wheelHeading = Rotation2d.kZero;
+  private SwerveModulePosition[] m_lastPositions;
 
   private final DoubleLogEntry[] m_cmdAngleLog = new DoubleLogEntry[4];
   private final DoubleLogEntry[] m_measAngleLog = new DoubleLogEntry[4];
@@ -71,8 +68,8 @@ public class DriveSubsystem extends SubsystemBase {
   public DriveSubsystem() {
     HAL.report(tResourceType.kResourceType_RobotDrive, tInstances.kRobotDriveSwerve_MaxSwerve);
 
-    m_odometry = new SwerveDriveOdometry(
-        DriveConstants.kDriveKinematics, getGyroRotation(), getModulePositions());
+    m_lastPositions = getModulePositions();
+    m_odometry = new SwerveDriveOdometry(DriveConstants.kDriveKinematics, m_wheelHeading, m_lastPositions);
 
     DataLog log = DataLogManager.getLog();
     for (int i = 0; i < kModuleNames.length; i++) {
@@ -117,7 +114,12 @@ public class DriveSubsystem extends SubsystemBase {
 
   @Override
   public void periodic() {
-    m_odometry.update(getGyroRotation(), getModulePositions());
+    // No gyro: integrate the rotation the wheels report.
+    SwerveModulePosition[] positions = getModulePositions();
+    Twist2d twist = DriveConstants.kDriveKinematics.toTwist2d(m_lastPositions, positions);
+    m_wheelHeading = m_wheelHeading.plus(new Rotation2d(twist.dtheta));
+    m_lastPositions = positions;
+    m_odometry.update(m_wheelHeading, positions);
     logModules();
 
     if (DriverStation.isDisabled()) {
@@ -141,24 +143,20 @@ public class DriveSubsystem extends SubsystemBase {
   }
 
   /**
-   * Drive from joystick-style inputs.
+   * Drive from joystick-style inputs, relative to the robot (there is no gyro for field-relative).
    *
    * @param xSpeed forward, -1..1 of max speed
    * @param ySpeed left, -1..1 of max speed
    * @param rot counter-clockwise, -1..1 of max angular speed
-   * @param fieldRelative relative to the driver's "forward" (falls back to robot-relative if the
-   *     gyro is disconnected, so a dead gyro can't send the robot the wrong way)
    */
-  public void drive(double xSpeed, double ySpeed, double rot, boolean fieldRelative) {
+  public void drive(double xSpeed, double ySpeed, double rot) {
     double xMps = xSpeed * DriveConstants.kAdjustedMaxSpeedMbpsTeleOp;
     double yMps = ySpeed * DriveConstants.kAdjustedMaxSpeedMbpsTeleOp;
     double rotRadPerSec = rot * DriveConstants.kMaxAngularSpeed.get();
 
     // With zero input, WPILib's kinematics returns the last wheel angles at zero speed, so the
     // wheels stop where they are instead of snapping straight.
-    ChassisSpeeds speeds = fieldRelative && isGyroConnected()
-        ? ChassisSpeeds.fromFieldRelativeSpeeds(xMps, yMps, rotRadPerSec, getDriverHeading())
-        : new ChassisSpeeds(xMps, yMps, rotRadPerSec);
+    ChassisSpeeds speeds = new ChassisSpeeds(xMps, yMps, rotRadPerSec);
     setModuleStates(DriveConstants.kDriveKinematics.toSwerveModuleStates(speeds),
         DriveConstants.kAdjustedMaxSpeedMbpsTeleOp);
   }
@@ -188,65 +186,16 @@ public class DriveSubsystem extends SubsystemBase {
     }
   }
 
-  /** Make the robot's current facing the driver's "forward" for field-relative driving. */
-  public void zeroDriverHeading() {
-    m_driverForward = getGyroRotation();
-    RobotDiagnostics.logEvent("DRIVER HEADING ZEROED (gyro " + m_driverForward.getDegrees() + " deg)");
-  }
-
-  /** Heading relative to the driver's "forward", counter-clockwise positive. */
-  @Logged(name = "DriverHeadingDegrees")
-  public double getDriverHeadingDegrees() {
-    return getDriverHeading().getDegrees();
-  }
-
-  private Rotation2d getDriverHeading() {
-    return getGyroRotation().minus(m_driverForward);
-  }
-
-  /** Robot heading, counter-clockwise positive (navX getAngle() is clockwise positive). */
-  private Rotation2d getGyroRotation() {
-    return m_gyro.getRotation2d();
-  }
-
-  @Logged(name = "GyroConnected")
-  public boolean isGyroConnected() {
-    boolean connected = m_gyro.isConnected();
-    if (connected != m_gyroWasConnected) {
-      RobotDiagnostics.logEvent(connected ? "GYRO RECONNECTED"
-          : "GYRO DISCONNECTED - field-relative disabled, driving robot-relative");
-      m_gyroWasConnected = connected;
-    }
-    return connected;
-  }
-
   @Logged(name = "Pose")
   public Pose2d getPose() {
     return m_odometry.getPoseMeters();
   }
 
-  /**
-   * Set where the robot is on the field. PathPlanner calls this at the start of a path auto with
-   * the path's starting pose. Because that tells us which way the robot faces on the field,
-   * field-relative "forward" is set from it too, so an auto that starts at an angle doesn't leave
-   * teleop driving skewed.
-   */
+  /** Set where the robot is on the field. PathPlanner calls this with a path auto's start pose. */
   public void resetOdometry(Pose2d pose) {
-    m_odometry.resetPosition(getGyroRotation(), getModulePositions(), pose);
-    setDriverForwardFromField(pose.getRotation());
-  }
-
-  /**
-   * Driver "forward" is away from our driver station: +X on the field for blue, -X for red.
-   * Given the robot's field heading, work out which gyro reading that corresponds to.
-   */
-  private void setDriverForwardFromField(Rotation2d fieldHeading) {
-    Rotation2d allianceForward = DriverStation.getAlliance().orElse(DriverStation.Alliance.Blue)
-        == DriverStation.Alliance.Red ? Rotation2d.k180deg : Rotation2d.kZero;
-    // driverHeading = gyro - m_driverForward must equal fieldHeading - allianceForward.
-    m_driverForward = getGyroRotation().minus(fieldHeading.minus(allianceForward));
-    RobotDiagnostics.logEvent("DRIVER HEADING SET FROM FIELD POSE (field heading "
-        + fieldHeading.getDegrees() + " deg, driver heading " + getDriverHeadingDegrees() + " deg)");
+    m_wheelHeading = pose.getRotation();
+    m_lastPositions = getModulePositions();
+    m_odometry.resetPosition(m_wheelHeading, m_lastPositions, pose);
   }
 
   /** Robot-relative chassis speeds measured from the modules. */

@@ -20,12 +20,8 @@ public final class OIConstants {
     public static final boolean kDriveSpeedSliderInverted = false;
     /** Fraction of max speed with the slider all the way down. Never 0, so the robot can't look dead. */
     public static final double kMinDriveSpeedScale = 0.25;
-    /** Press to make the robot's current facing "forward" for field-relative driving. VERIFY. */
-    public static final int kZeroHeadingButton = 2;
-    /** Hold to lock the wheels in an X (hard to push). */
+    /** Hold to lock the wheels in an X (hard to push). (No gyro, so no heading/field-relative buttons.) */
     public static final int kXLockButton = 4;
-    /** Press to switch between field-relative and robot-relative driving. VERIFY. */
-    public static final int kFieldRelativeToggleButton = 3;
 
     /** Max change in translation input per second (0 to full stick in 1/3 s). Limits current spikes. */
     public static final double kTranslationSlewRate = 3.0;
@@ -40,14 +36,26 @@ public final class OIConstants {
     public static final int kIntakeSpeedSliderAxis = 6;
     public static final boolean kIntakeSpeedSliderInverted = false;
 
-    public static final int kIntakeReceiveButton = 5;
+    // Operator buttons: the March 2026 competition layout the drivers use.
+    public static final int kExtenderOutButton = 1;
+    public static final int kExtenderInButton = 2;
+    /** Hold: the operator stick's X axis moves the box in/out. */
+    public static final int kExtenderManualButton = 3;
+    public static final int kIntakeReceiveButton = 4;
+    // 5 was the vision launch-mode toggle; there's no Limelight, so it's unused.
     public static final int kIntakeEjectButton = 6;
-    public static final int kLauncherButton = 18;
-    public static final int kExtenderOutButton = 4;
-    public static final int kExtenderInButton = 3;
+    public static final int kExtenderHomeButton = 8;
+    public static final int kClearExtenderFaultsButton = 13;
+    /** Stop every mechanism (box holds where it is). */
+    public static final int kStopAllButton = 14;
     public static final int kLauncherIdleOnButton = 16;
     public static final int kLauncherIdleOffButton = 17;
-    public static final int kExtenderHomeButton = 8;
+    public static final int kLauncherButton = 18;
+    /**
+     * Operator stick axis for manual extender mode. The March code read the DRIVER's X axis here
+     * (which also strafes the robot), so this uses the operator's own X axis instead. VERIFY.
+     */
+    public static final int kExtenderManualAxis = 0;
 
     /** Convert a slider's raw -1..1 reading to 0..1. */
     public static double sliderToPercent(double raw, boolean inverted) {

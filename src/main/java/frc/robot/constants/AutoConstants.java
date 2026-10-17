@@ -14,10 +14,10 @@ public final class AutoConstants {
     public static final double kExampleAutoTimeout = 3.0;
 
     /**
-     * Shot RPM for the "Shoot"/"SpinUp" named commands (no slider in auto). Starts mid-range of the
-     * shooter slider; set it from test shots at your auto shooting spot.
+     * Shot RPM for the "Shoot"/"SpinUp" named commands (no slider in auto). 3000 RPM (50
+     * rotations/s) is what the March 2026 competition code used.
      */
-    public static final TunableNumber kAutoShotRPM = TuningManager.register("Auto/ShotRPM", 2400);
+    public static final TunableNumber kAutoShotRPM = TuningManager.register("Auto/ShotRPM", 3000);
     /** How long the "Shoot" named command runs before ending. */
     public static final double kShootSeconds = 2.0;
 

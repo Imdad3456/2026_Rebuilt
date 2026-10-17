@@ -4,7 +4,6 @@
 
 package frc.robot.commands;
 
-import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 
 import edu.wpi.first.math.MathUtil;
@@ -14,14 +13,13 @@ import frc.robot.constants.OIConstants;
 import frc.robot.subsystems.DriveSubsystem;
 import frc.robot.util.diagnostics.RobotDiagnostics;
 
-/** Teleop driving from the driver's stick. The drivetrain's default command. */
+/** Teleop driving from the driver's stick, robot-relative (no gyro). The drivetrain's default command. */
 public class DriveCommand extends Command {
   private final DriveSubsystem m_drive;
   private final DoubleSupplier m_forward;
   private final DoubleSupplier m_left;
   private final DoubleSupplier m_ccwRotation;
   private final DoubleSupplier m_speedScale;
-  private final BooleanSupplier m_fieldRelative;
 
   // Ramp the inputs: going 0 to full stick instantly pulls a huge current spike (brownouts).
   private final SlewRateLimiter m_forwardLimiter = new SlewRateLimiter(OIConstants.kTranslationSlewRate);
@@ -33,16 +31,14 @@ public class DriveCommand extends Command {
    * @param left strafe input, -1..1 (positive = left)
    * @param ccwRotation rotation input, -1..1 (positive = counter-clockwise)
    * @param speedScale 0..1 multiplier on all three (the driver's speed slider)
-   * @param fieldRelative whether to drive relative to the driver's "forward"
    */
   public DriveCommand(DriveSubsystem drive, DoubleSupplier forward, DoubleSupplier left,
-      DoubleSupplier ccwRotation, DoubleSupplier speedScale, BooleanSupplier fieldRelative) {
+      DoubleSupplier ccwRotation, DoubleSupplier speedScale) {
     m_drive = drive;
     m_forward = forward;
     m_left = left;
     m_ccwRotation = ccwRotation;
     m_speedScale = speedScale;
-    m_fieldRelative = fieldRelative;
     addRequirements(drive);
   }
 
@@ -66,7 +62,7 @@ public class DriveCommand extends Command {
 
     // What actually reaches the drivetrain (raw stick values are in the DS log).
     RobotDiagnostics.recordDriveInput(forward, left, rot, scale);
-    m_drive.drive(forward, left, rot, m_fieldRelative.getAsBoolean());
+    m_drive.drive(forward, left, rot);
   }
 
   @Override

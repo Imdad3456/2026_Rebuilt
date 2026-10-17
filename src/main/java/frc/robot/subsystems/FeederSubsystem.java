@@ -32,6 +32,10 @@ public class FeederSubsystem extends SubsystemBase {
         .withName("FeedWhenReady");
   }
 
+  public Command stop() {
+    return runOnce(m_motor::stopMotor).withName("FeederStop");
+  }
+
   /** Backwards while held, to clear a jam. */
   public Command reverse() {
     return runEnd(() -> m_motor.set(-FeederConstants.kFeederSpeed.get()), m_motor::stopMotor)
